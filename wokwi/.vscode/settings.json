@@ -1,0 +1,7 @@
+{
+  "files.associations": { "*.ino": "cpp" },
+  "workbench.editorAssociations": { "diagram.json": "wokwi.diagram-editor" },
+  "files.exclude": { "build": true },
+  "search.exclude": { "build/**": true },
+  "cSpell.words": ["DHT", "ESP32", "HiveMQ", "IoT", "LCD", "MQTT", "PubSubClient", "Wokwi"]
+}

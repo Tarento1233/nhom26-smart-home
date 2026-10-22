@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nói để điều khiển — Nhà thông minh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #fafbf6; --card: #ffffff; --ink: #243c37; --muted: #65756e; --line: #e3e7df;
+    --amber: #bc943f; --amber-soft: #fffae9; --teal: #28634e; --teal-soft: #edf3e7;
+    --red: #c2410c; --ok: #1f8a4c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Be Vietnam Pro", system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 20px 48px; display: grid; gap: 18px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: clamp(24px,4vw,32px); letter-spacing: -.8px; margin: 10px 0 7px; line-height: 1.3; }
+  .back-home { color: var(--teal); font-size: 12px; font-weight: 600; text-decoration: none; display: inline-block; min-height: 32px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible { outline: 3px solid #238b83; outline-offset: 4px; }
+  .voice-steps { display:flex; justify-content:center; flex-wrap:wrap; gap:12px; margin-bottom:15px; font-size:11px; color:var(--muted); }
+  .voice-steps span { display:flex; align-items:center; gap:6px; }
+  .voice-steps b { display:grid; place-items:center; width:21px; height:21px; border-radius:50%; background:#dfe8d6; color:#466343; font-size:10px; }
+  .voice-settings summary { cursor:pointer; font-size:13px; font-weight:600; min-height:30px; }
+  .voice-settings[open] summary { margin-bottom:16px; }
+  .connection-details { display:flex; flex-wrap:wrap; gap:6px; margin-top:18px; }
+  .sub { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 99px;
+    font-size: .8rem; font-weight: 600; background: #eceff0; color: var(--muted); }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pill.on { background: #dcf3e6; color: var(--ok); }
+  .pill.off { background: #fde8dd; color: var(--red); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  .card.voice { background: #edf3e7; border-color: #d9e3d5; padding: 28px 22px; }
+  .voice { display: grid; justify-items: center; gap: 12px; text-align: center; padding: 26px 18px; }
+  #mic { width: 112px; height: 112px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--teal); color: #fff; display: grid; place-items: center;
+    box-shadow: 0 8px 24px -8px rgba(20,128,122,.6); transition: transform .15s, background .15s; }
+  #mic:hover { transform: scale(1.04); }
+  #mic:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; }
+  #mic.listening { background: var(--red); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(194,65,12,.45); } 50% { box-shadow: 0 0 0 18px rgba(194,65,12,0); } }
+  @media (prefers-reduced-motion: reduce) { #mic.listening { animation: none; } }
+  #heard { font-size: 1.25rem; font-weight: 600; min-height: 1.6em; }
+  #reply { color: var(--muted); min-height: 1.4em; }
+  .hint { color: var(--muted); font-size: .85rem; }
+  .hint b { color: var(--ink); font-weight: 600; }
+
+  .devices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .dev { display: grid; gap: 10px; }
+  .dev .top { display: flex; justify-content: space-between; align-items: center; }
+  .dev h2 { font-size: 1rem; margin: 0; }
+  .state { font-weight: 700; font-size: 1.5rem; }
+  .dev.light.is-on { background: var(--amber-soft); border-color: #efc98a; }
+  .dev.ac.is-on { background: var(--teal-soft); border-color: #9fd3cf; }
+  .btns { display: flex; gap: 8px; }
+  .btns button { flex: 1; padding: 9px; border-radius: 9px; border: 1px solid var(--line); background: #fff;
+    font: inherit; font-size: 13px; min-height: 46px; font-weight: 600; cursor: pointer; }
+  .btns button:hover { border-color: var(--ink); }
+  .btns button.selected { background: var(--teal); border-color: var(--teal); color: #fff; }
+
+  .sensors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .sensor { text-align: center; }
+  .sensor .v { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sensor .k { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+
+  #log { margin: 0; padding: 0; list-style: none; font-size: .85rem; color: var(--muted);
+    max-height: 180px; overflow: auto; display: grid; gap: 4px; font-family: ui-monospace, Consolas, monospace; }
+  .warn { background: #fff4e5; border-color: #f3cf9b; color: #7a4a0c; font-size: .9rem; }
+  @media (max-width: 560px) { .devices { grid-template-columns: 1fr; } .sensors { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <a class="back-home" href="/dashboard/room">← Về căn phòng</a>
+      <h1>Nói một câu, nhà làm ngay.</h1>
+      <div class="sub">Điều khiển đèn và máy lạnh bằng giọng nói.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <span id="roomPill" class="pill">Đang kết nối căn phòng</span>
+    </div>
+  </header>
+
+  <div id="unsupported" class="card warn" hidden>
+    Trình duyệt này không hỗ trợ nhận giọng nói. Hãy mở trang bằng <b>Google Chrome</b> (hoặc Microsoft Edge) và cho phép dùng micro.
+  </div>
+
+  <section class="card voice" aria-label="Bấm micro để điều khiển">
+    <div class="voice-steps"><span><b>1</b> Bấm micro</span><span><b>2</b> Nói điều bạn muốn</span><span><b>3</b> Chờ nhà trả lời</span></div>
+    <button id="mic" aria-label="Bấm để nói" aria-pressed="false">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>
+    </button>
+    <div id="heard" role="status">Bấm micro rồi nói “bật đèn”</div>
+    <div id="reply" role="status" aria-live="polite"></div>
+    <div class="hint">Nói trọn câu, rồi chờ khoảng 2,5 giây hoặc bấm micro lần nữa để gửi lệnh.</div>
+    <div class="hint">Ví dụ: <b>“bật đèn”</b> · <b>“tắt máy lạnh”</b> · <b>“bật tất cả”</b> · <b>“nhiệt độ bao nhiêu”</b> · <b>“có ai trong phòng không”</b></div>
+  </section>
+
+  <details class="card voice-settings">
+    <summary>Chọn cách nhà hoạt động</summary>
+    <div class="btns" id="modeButtons" style="display:flex;gap:8px">
+      <button data-mode="AUTO">Tự động</button><button data-mode="MANUAL">Tự điều khiển</button><button data-mode="SLEEP">Giờ ngủ</button>
+    </div>
+    <div class="hint" id="manualRemaining" style="margin-top:10px">Tự động: nhà bật tắt giúp bạn. Tự điều khiển: bạn chọn bật tắt. Giờ ngủ: đèn theo người, máy lạnh giữ 25°C.</div>
+    <span id="modePill" class="pill" style="margin-top:12px">Chế độ: đang chờ</span>
+  </details>
+
+  <section class="devices">
+    <div class="card dev light" id="devLight">
+      <div class="top"><h2>Đèn phòng</h2><span class="state" id="lightState">—</span></div>
+      <p class="hint">Bật trước khi về nhà cũng được. Lệnh tay được giữ đến khi bạn chọn Tự động.</p>
+      <div class="btns"><button data-dev="light" data-cmd="ON">Bật đèn</button><button data-dev="light" data-cmd="OFF">Tắt đèn</button></div>
+    </div>
+    <div class="card dev ac" id="devAc">
+      <div class="top"><h2>Máy lạnh</h2><span class="state" id="acState">—</span></div>
+      <p class="hint">Tự giữ quanh 25°C khi nhà đang chạy tự động.</p>
+      <div class="btns"><button data-dev="ac" data-cmd="ON">Bật máy lạnh</button><button data-dev="ac" data-cmd="OFF">Tắt máy lạnh</button></div>
+    </div>
+  </section>
+
+  <details class="card voice-settings"><summary>Số liệu và kết nối</summary>
+  <section class="sensors">
+    <div class="sensor"><div class="v" id="temp">—</div><div class="k">Nhiệt độ</div></div>
+    <div class="sensor"><div class="v" id="hum">—</div><div class="k">Độ ẩm</div></div>
+    <div class="sensor"><div class="v" id="lux">—</div><div class="k">Ánh sáng</div></div>
+    <div class="sensor"><div class="v" id="presence">—</div><div class="k">Có người</div></div>
+  </section>
+  <div class="hint" id="temperatureSource">Nguồn nhiệt độ: cảm biến Wokwi chỉnh tay.</div>
+
+  <div class="connection-details"><span id="mqttPill" class="pill">Broker: đang kết nối</span><span id="espPill" class="pill">ESP32: chưa rõ</span><span id="controllerPill" class="pill">Node-RED: chưa rõ</span></div>
+  <section style="margin-top:16px">
+    <h2 style="font-size:13px;margin-bottom:8px">Hoạt động vừa rồi</h2>
+    <ul id="log"></ul>
+  </section>
+  </details>
+</main>
+
+<script>
+const BROKER = "wss://broker.hivemq.com:8884/mqtt";
+const BASE = "nhom26/room1";
+const T = {
+  lightCmd: BASE + "/controller/actuator/light/cmd", acCmd: BASE + "/controller/actuator/ac/cmd",
+  lightState: BASE + "/actuator/light/state", acState: BASE + "/actuator/ac/state",
+  tempHumid: BASE + "/sensor/temp_humid", light: BASE + "/sensor/light",
+  motion: BASE + "/sensor/motion", status: BASE + "/status",
+  controllerStatus: BASE + "/controller/status", controllerState: BASE + "/controller/state",
+  modeCmd: BASE + "/controller/mode/cmd",
+};
+const state = { light: null, ac: null, temp: null, hum: null, lux: null, presence: null,
+  espOnline: false, controllerOnline: false, controllerLastAt: 0, mode: null, simulated:false };
+const $ = (id) => document.getElementById(id);
+
+function log(msg) {
+  const li = document.createElement("li");
+  li.textContent = new Date().toLocaleTimeString("vi-VN") + "  " + msg;
+  $("log").prepend(li);
+}
+
+function speak(text) {
+  $("reply").textContent = text;
+  if (!("speechSynthesis" in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "vi-VN";
+  const vi = speechSynthesis.getVoices().find(v => v.lang && v.lang.toLowerCase().startsWith("vi"));
+  if (vi) u.voice = vi;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+const client = mqtt.connect(BROKER, { clientId: "nhom26-voice-" + Math.random().toString(16).slice(2, 8), reconnectPeriod: 3000 });
+client.on("connect", () => {
+  $("mqttPill").textContent = "Broker: đã kết nối"; $("mqttPill").className = "pill on";
+  client.subscribe(Object.values(T).filter(t => !t.endsWith("/cmd")));
+  log("Đã kết nối broker HiveMQ");
+});
+client.on("close", () => {
+  $("mqttPill").textContent = "Broker: mất kết nối"; $("mqttPill").className = "pill off";
+  state.controllerOnline = false;
+  renderController();
+});
+client.on("message", (topic, payload) => {
+  const text = payload.toString();
+  let data = null;
+  try { data = JSON.parse(text); } catch (e) {}
+  if (topic === T.status) {
+    const on = text === "online";
+    state.espOnline = on;
+    $("espPill").textContent = "ESP32: " + (on ? "online" : "offline");
+    $("espPill").className = "pill " + (on ? "on" : "off");
+    renderController();
+  } else if (topic === T.controllerStatus) {
+    state.controllerOnline = text === "online";
+    renderController();
+  } else if (topic === T.controllerState && data) {
+    state.controllerLastAt = Number(data.timestamp) || 0;
+    state.mode = data.mode;
+    state.presence = data.motion;
+    state.presenceFresh = data.motionFresh === true;
+    state.simulated = !!data.environment?.active;
+    render();
+    state.espOnline = data.status === "online";
+    $("espPill").textContent = "ESP32: " + (state.espOnline ? "online" : data.status === "stale" ? "dữ liệu cũ" : "offline");
+    $("espPill").className = "pill " + (state.espOnline ? "on" : "off");
+    $("modePill").textContent = "Chế độ: " + ({AUTO:"Tự động",MANUAL:"Tự điều khiển",SLEEP:"Giờ ngủ"}[data.mode] || "đang chờ");
+    $("manualRemaining").textContent = data.mode === "MANUAL"
+      ? "Bạn đang tự điều khiển. Lệnh bật/tắt được giữ cả khi phòng vắng; chọn Tự động để nhà tự chăm lại."
+      : "Bấm hoặc nói bật/tắt sẽ chuyển sang Tự điều khiển, giữ đến khi bạn chọn Tự động.";
+    renderController();
+  } else if (topic === T.lightState && data) { state.light = data.state; render(); }
+  else if (topic === T.acState && data) { state.ac = data.state; render(); }
+  else if (topic === T.tempHumid && data) { state.temp = data.temp; state.hum = data.hum; state.simulated = data.source === 'model'; render(); }
+  else if (topic === T.light && data) { state.lux = data.lux; render(); }
+  else if (topic === T.motion && data) { state.presence = data.presence; render(); }
+});
+
+function render() {
+  const lbl = (s) => s === "ON" ? "Bật" : s === "OFF" ? "Tắt" : "—";
+  $("lightState").textContent = lbl(state.light);
+  $("acState").textContent = lbl(state.ac);
+  $("devLight").classList.toggle("is-on", state.light === "ON");
+  $("devAc").classList.toggle("is-on", state.ac === "ON");
+  $("temp").textContent = state.temp == null ? "—" : state.temp + "°C";
+  $("hum").textContent = state.hum == null ? "—" : state.hum + "%";
+  $("lux").textContent = state.lux == null ? "—" : state.lux + " lx";
+  $("presence").textContent = state.presence == null ? "—" : (state.presence ? "Có" : "Không");
+  $("temperatureSource").textContent = state.simulated ? "Nguồn nhiệt độ: mô hình phòng tự động (dữ liệu mô phỏng)." : "Nguồn nhiệt độ: cảm biến Wokwi chỉnh tay.";
+}
+
+function controllerReady() {
+  return state.controllerOnline && Date.now() - state.controllerLastAt < 15000 && client.connected !== false;
+}
+
+function renderController() {
+  const ready = controllerReady();
+  $("roomPill").textContent = ready && state.espOnline ? "Phòng đã kết nối" : "Phòng chưa sẵn sàng";
+  $("roomPill").className = "pill " + (ready && state.espOnline ? "on" : "off");
+  $("controllerPill").textContent = "Node-RED: " + (ready ? "online" : "chưa có dữ liệu mới");
+  $("controllerPill").className = "pill " + (ready ? "on" : "off");
+  document.querySelectorAll('#modeButtons button').forEach(button => {
+    button.classList.toggle('selected', button.dataset.mode === state.mode);
+    button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+  });
+}
+
+function send(dev, cmd) {
+  if (!controllerReady() || !state.espOnline) {
+    $("reply").textContent = !controllerReady() ? "Node-RED chưa sẵn sàng. Mở khoi_dong_node_red.bat rồi thử lại." : "ESP32 chưa online. Kiểm tra mô phỏng Wokwi đang chạy.";
+    renderController();
+    return false;
+  }
+  const topic = dev === "light" ? T.lightCmd : T.acCmd;
+  client.publish(topic, JSON.stringify({ cmd, source: "voice" }));
+  log("Gửi " + topic + " " + cmd);
+  return true;
+}
+
+function selectMode(mode) {
+  if (!controllerReady()) {
+    $("reply").textContent = "Node-RED chưa sẵn sàng. Mở khoi_dong_node_red.bat rồi thử lại.";
+    return false;
+  }
+  client.publish(T.modeCmd, JSON.stringify({ mode, source: "voice" }));
+  log("Yêu cầu chế độ " + mode);
+  return true;
+}
+
+document.querySelectorAll(".btns button[data-dev]").forEach(b =>
+  b.addEventListener("click", () => send(b.dataset.dev, b.dataset.cmd)));
+document.querySelectorAll("#modeButtons button").forEach(b =>
+  b.addEventListener("click", () => selectMode(b.dataset.mode)));
+
+const DEVICE_WORDS = {
+  light: ["đèn", "den", "bóng đèn"],
+  ac: ["máy lạnh", "may lanh", "điều hòa", "điều hoà", "dieu hoa", "máy điều hòa", "quạt"],
+};
+const ON_WORDS = ["bật", "mở", "bat", "mo "];
+const OFF_WORDS = ["tắt", "đóng", "tat", "dong"];
+
+function firstIndex(text, words) {
+  let best = -1;
+  for (const w of words) { const i = text.indexOf(w); if (i >= 0 && (best < 0 || i < best)) best = i; }
+  return best;
+}
+
+function handle(textRaw) {
+  const text = " " + textRaw.toLowerCase().trim() + " ";
+  $("heard").textContent = "“" + textRaw + "”";
+  log("Nghe: " + textRaw);
+
+  if (text.includes("chế độ") || text.includes("tự động") || text.includes("tự điều khiển") || text.includes("thủ công")) {
+    const mode = text.includes("tự động") ? "AUTO" : text.includes("ngủ") ? "SLEEP" : text.includes("thủ công") || text.includes("tự điều khiển") ? "MANUAL" : null;
+    if (mode) { if (selectMode(mode)) speak("Đã gửi yêu cầu chuyển chế độ " + mode); return; }
+    return speak(state.mode ? "Chế độ hiện tại là " + state.mode : "Chưa có dữ liệu chế độ");
+  }
+
+  if (text.includes("nhiệt độ") || text.includes("nóng") || text.includes("mấy độ")) {
+    return speak(state.temp == null ? "Chưa có dữ liệu nhiệt độ" : (state.simulated ? "Nhiệt độ mô phỏng là " : "Nhiệt độ phòng là ") + state.temp + " độ C, độ ẩm " + state.hum + " phần trăm");
+  }
+  if (text.includes("độ ẩm")) return speak(state.hum == null ? "Chưa có dữ liệu độ ẩm" : "Độ ẩm là " + state.hum + " phần trăm");
+  if (text.includes("có ai") || text.includes("có người")) {
+    return speak(state.presence == null ? "Chưa có dữ liệu" : state.presence ? "Trong phòng đang có người" : "Trong phòng không có ai");
+  }
+
+  const iOn = firstIndex(text, ON_WORDS), iOff = firstIndex(text, OFF_WORDS);
+  if (iOn < 0 && iOff < 0) {
+    $("reply").textContent = "Chưa nhận ra lệnh. Bấm micro để nói lại, ví dụ: bật đèn.";
+    return;
+  }
+  const cmd = iOff < 0 || (iOn >= 0 && iOn < iOff) ? "ON" : "OFF";
+
+  let devs = [];
+  if (text.includes("tất cả") || text.includes("hết")) devs = ["light", "ac"];
+  else for (const [dev, words] of Object.entries(DEVICE_WORDS)) if (firstIndex(text, words) >= 0) devs.push(dev);
+  if (!devs.length) {
+    $("reply").textContent = "Hãy nói thêm tên thiết bị, ví dụ: bật đèn hoặc tắt máy lạnh.";
+    return;
+  }
+
+  if (!devs.every(d => send(d, cmd))) return;
+  const names = devs.map(d => d === "light" ? "đèn" : "máy lạnh").join(" và ");
+  speak("Đã gửi lệnh " + (cmd === "ON" ? "bật " : "tắt ") + names);
+}
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) {
+  $("unsupported").hidden = false;
+  $("mic").disabled = true;
+} else {
+  const rec = new SR();
+  rec.lang = "vi-VN";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  const SILENCE_MS = 2500;
+  const MAX_LISTEN_MS = 20000;
+  let active = false;
+  let listening = false;
+  let starting = false;
+  let finishing = false;
+  let speaking = false;
+  let committedText = "";
+  let finalText = "";
+  let interimText = "";
+  let silenceTimer;
+  let deadlineTimer;
+  let restartTimer;
+  const joinText = (...parts) => parts.filter(Boolean).join(" ").trim();
+
+  function clearSilenceTimer() {
+    clearTimeout(silenceTimer);
+    silenceTimer = null;
+  }
+
+  function clearTimers() {
+    clearSilenceTimer();
+    clearTimeout(deadlineTimer);
+    clearTimeout(restartTimer);
+  }
+
+  function resetMic() {
+    $("mic").disabled = false;
+    $("mic").classList.remove("listening");
+    $("mic").setAttribute("aria-pressed", "false");
+    $("mic").setAttribute("aria-label", "Bấm để nói");
+  }
+
+  function complete() {
+    const text = joinText(committedText, finalText);
+    active = false;
+    finishing = false;
+    clearTimers();
+    resetMic();
+    // Only act on final results, after recognition has released the microphone.
+    if (text) handle(text);
+    else {
+      $("heard").textContent = "Chưa nghe rõ câu lệnh";
+      $("reply").textContent = "Bấm micro để thử lại.";
+    }
+  }
+
+  function finish() {
+    if (!active || finishing) return;
+    finishing = true;
+    clearTimers();
+    $("mic").disabled = true;
+    $("reply").textContent = "Đang xử lý câu lệnh…";
+    // stop() can return a last, corrected final result before onend.
+    if (listening || starting) rec.stop();
+    else complete();
+  }
+
+  function waitForSilence() {
+    clearSilenceTimer();
+    if (active && !finishing) silenceTimer = setTimeout(finish, SILENCE_MS);
+  }
+
+  function recognitionError(message) {
+    active = false;
+    finishing = false;
+    clearTimers();
+    resetMic();
+    $("mic").disabled = listening || starting;
+    $("heard").textContent = message;
+    $("reply").textContent = "";
+    log(message);
+  }
+
+  function startRecognition() {
+    if (!active || finishing) return;
+    starting = true;
+    try { rec.start(); }
+    catch (error) {
+      starting = false;
+      recognitionError("Chưa mở được micro. Bấm micro để thử lại.");
+    }
+  }
+
+  rec.onstart = () => { starting = false; listening = true; };
+  rec.onspeechstart = () => { speaking = true; clearSilenceTimer(); };
+  rec.onspeechend = () => { speaking = false; waitForSilence(); };
+  rec.onend = () => {
+    starting = false;
+    listening = false;
+    speaking = false;
+    if (!active) { resetMic(); return; }
+    if (finishing) { complete(); return; }
+    // Some browsers end recognition after a short pause even in continuous mode.
+    // Preserve final segments and reopen capture during the remaining grace period.
+    committedText = joinText(committedText, finalText);
+    finalText = "";
+    interimText = "";
+    if (!silenceTimer) waitForSilence();
+    restartTimer = setTimeout(startRecognition, 150);
+  };
+  rec.onerror = (e) => {
+    if (!active) return;
+    const msg = e.error === "not-allowed" ? "Chưa được phép dùng micro — bấm biểu tượng ổ khóa trên thanh địa chỉ để cho phép"
+      : e.error === "no-speech" ? "Không nghe thấy gì, thử lại nhé" : "Lỗi nhận giọng nói: " + e.error;
+    recognitionError(msg);
+  };
+  rec.onresult = (e) => {
+    if (!active) return;
+    const finals = [], interims = [];
+    // results contains the whole current recognition, including revised interims.
+    for (let i = 0; i < e.results.length; i++) {
+      const result = e.results[i];
+      (result.isFinal ? finals : interims).push(result[0].transcript.trim());
+    }
+    finalText = joinText(...finals);
+    interimText = joinText(...interims);
+    $("heard").textContent = joinText(committedText, finalText, interimText) + "…";
+    clearSilenceTimer();
+    if (!speaking) waitForSilence();
+  };
+  $("mic").addEventListener("click", () => {
+    if (active) { finish(); return; }
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    committedText = finalText = interimText = "";
+    active = true;
+    finishing = speaking = false;
+    $("mic").classList.add("listening");
+    $("mic").setAttribute("aria-pressed", "true");
+    $("mic").setAttribute("aria-label", "Bấm để kết thúc câu lệnh");
+    $("heard").textContent = "Đang nghe…";
+    $("reply").textContent = "Nói xong, chờ một chút hoặc bấm micro lần nữa.";
+    deadlineTimer = setTimeout(finish, MAX_LISTEN_MS);
+    startRecognition();
+  });
+}
+</script>
+</body>
+</html>

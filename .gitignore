@@ -1,0 +1,45 @@
+# This workspace also contains unrelated coursework. Track only Smart Home.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/BAT_DAU_O_DAY.md
+!/HUONG_DAN_GITHUB.md
+!/HUONG_DAN_CHAY_DEMO.md
+!/HUONG_DAN_TEST_TU_DAU_DEN_CUOI.md
+!/KET_QUA_KIEM_THU.md
+!/TEST_NHANH_5_PHUT.md
+!/Nhom26-SmartHome.code-workspace
+!/cai_dat_node_red.bat
+!/khoi_dong_demo.bat
+!/khoi_dong_node_red.bat
+!/mo_wokwi_vscode.bat
+!/tat_node_red.bat
+!/node_red/
+!/wokwi/
+!/voice/
+!/home_assistant/
+!/test/
+!/docs/
+
+# Dependencies, runtime state and machine credentials.
+**/node_modules/
+**/.pnpm-store/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.log
+**/.config.*
+**/flows_cred.json
+
+# Wokwi needs these ready-built artifacts to run without an Arduino toolchain.
+/wokwi/build/*
+!/wokwi/build/sketch.ino.merged.bin
+!/wokwi/build/sketch.ino.elf
+!/wokwi/build/build-info.json
+/wokwi/.vscode/c_cpp_properties.json

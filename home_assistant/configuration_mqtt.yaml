@@ -1,0 +1,54 @@
+# Dán phần này vào cuối configuration.yaml của Home Assistant, đổi nhom26 thành mã nhóm (trùng với GROUP trong sketch.ino)
+mqtt:
+  light:
+    - name: "Den phong"
+      unique_id: nhom26_room1_light
+      command_topic: "nhom26/room1/controller/actuator/light/cmd"
+      payload_on: '{"cmd":"ON"}'
+      payload_off: '{"cmd":"OFF"}'
+      state_topic: "nhom26/room1/actuator/light/state"
+      state_value_template: >-
+        {{ '{"cmd":"ON"}' if value_json.state == 'ON' else '{"cmd":"OFF"}' }}
+      availability_topic: "nhom26/room1/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+  switch:
+    - name: "May lanh"
+      unique_id: nhom26_room1_ac
+      command_topic: "nhom26/room1/controller/actuator/ac/cmd"
+      payload_on: '{"cmd":"ON"}'
+      payload_off: '{"cmd":"OFF"}'
+      state_topic: "nhom26/room1/actuator/ac/state"
+      value_template: "{{ value_json.state }}"
+      state_on: "ON"
+      state_off: "OFF"
+      availability_topic: "nhom26/room1/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+  sensor:
+    - name: "Nhiet do phong"
+      unique_id: nhom26_room1_temp
+      state_topic: "nhom26/room1/sensor/temp_humid"
+      value_template: "{{ value_json.temp }}"
+      unit_of_measurement: "°C"
+      device_class: temperature
+    - name: "Do am phong"
+      unique_id: nhom26_room1_hum
+      state_topic: "nhom26/room1/sensor/temp_humid"
+      value_template: "{{ value_json.hum }}"
+      unit_of_measurement: "%"
+      device_class: humidity
+    - name: "Anh sang phong"
+      unique_id: nhom26_room1_lux
+      state_topic: "nhom26/room1/sensor/light"
+      value_template: "{{ value_json.lux }}"
+      unit_of_measurement: "lx"
+      device_class: illuminance
+  binary_sensor:
+    - name: "Co nguoi"
+      unique_id: nhom26_room1_motion
+      state_topic: "nhom26/room1/sensor/motion"
+      value_template: "{{ value_json.presence }}"
+      payload_on: "1"
+      payload_off: "0"
+      device_class: occupancy

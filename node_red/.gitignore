@@ -1,0 +1,7 @@
+node_modules/
+.pnpm-store/
+data/
+.config.*
+.flows.json.backup
+flows_cred.json
+*.log

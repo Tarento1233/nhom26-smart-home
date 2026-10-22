@@ -1,0 +1,6 @@
+﻿{
+    "source":  "sketch.ino",
+    "sourceSha256":  "F168B32C8E7A22B71A673C104A9208C57A10CEC532987185B7255C0A896691C8",
+    "fqbn":  "esp32:esp32:esp32",
+    "builtAt":  "2026-10-22T13:55:15.8670117+07:00"
+}
