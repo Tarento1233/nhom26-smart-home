@@ -82,7 +82,8 @@ def check(description, condition=True):
 def start_server():
     global process, server_log
     env = os.environ.copy()
-    env.update(IOT_MQTT_BASE=BASE, IOT_LOG_FILE=str(DATA / "test-e2e.csv"), PORT=str(PORT))
+    env.update(IOT_MQTT_BASE=BASE, IOT_LOG_FILE=str(DATA / "test-e2e.csv"), PORT=str(PORT),
+               IOT_PREFERENCES_DIR=str(DATA / ('test-preferences-' + BASE.split('/')[-1])))
     node = shutil.which("node")
     assert node, "Node.js is required"
     server_log = (DATA / "test-e2e-node-red.log").open("a", encoding="utf-8")
@@ -274,6 +275,19 @@ try:
     wait_for(lambda s: s['mode']=='SLEEP' and s['light']=='ON', 'explicitly return to the night schedule')
     check('Explicit AUTO returns to scheduled SLEEP and resumes automation')
 
+    control('autoTemperature', 28)
+    control('manualTemperature', 20)
+    wait_for(lambda s: s['mode']=='SLEEP' and s['acTarget']==28 and s['acSettings']['manual']==20, 'save independent targets without changing SLEEP')
+    client.publish(BASE + '/controller/temperature/cmd', json.dumps({'profile':'manual','temperature':21,'source':'voice'}), qos=1).wait_for_publish()
+    wait_for(lambda s: s['acSettings']['manual']==21 and s['mode']=='SLEEP', 'voice target MQTT request')
+    check('HTTP and MQTT temperature requests save independent profiles without changing mode')
+    try:
+        control('autoTemperature', 15)
+        raise AssertionError('Out-of-range temperature must be rejected')
+    except HTTPError as error:
+        check('Temperature below 16C is rejected with HTTP 400', error.code==400 and state()['acSettings']['auto']==28)
+    time.sleep(2)  # Allow the file-backed preferences store to flush before restart.
+
     with lock:
         heartbeat_enabled = False
     client.publish(BASE + "/status", "offline", qos=1, retain=True).wait_for_publish()
@@ -291,6 +305,9 @@ try:
     start_server()
     wait_for(lambda s: s["status"] == "stale", "retained data is stale after restart")
     check("Restart does not automate from retained telemetry", len(commands) == count_before)
+    check('Both temperature profiles survive a controller restart', state()['acSettings']=={'auto':28,'manual':21})
+    control('autoTemperature',25)
+    control('manualTemperature',25)
     with lock:
         heartbeat_enabled = True
     wait_for(lambda s: s["status"] == "online", "recover after fresh heartbeat")

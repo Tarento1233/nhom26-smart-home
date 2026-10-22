@@ -54,8 +54,13 @@ Cần quyền ghi vào repo để push; các thành viên khác vẫn clone và 
 
 ## Cách hoạt động
 
-- **Tự động / Giờ ngủ:** đèn theo người; máy lạnh làm mát về quanh 25°C.
+- **Tự động / Giờ ngủ:** đèn theo người; máy lạnh tự giữ theo nhiệt độ bạn chọn (mặc định 25°C).
 - **Tự điều khiển:** giữ lệnh đến khi bạn đổi chế độ, cho phép bật đèn khi phòng vắng.
+- **Chỉnh máy lạnh 16–31°C:** chọn chế độ rồi bấm **− / +** ở thẻ Máy lạnh.
+  Tự điều khiển và Tự động nhớ mức riêng, kể cả sau khi khởi động lại Node-RED.
+  Giờ ngủ dùng mức của Tự động. Đổi nhiệt độ giữ nguyên chế độ; khi tự điều khiển,
+  bấm **Bật máy lạnh** nếu máy đang tắt. Nhiệt độ phòng thay đổi dần theo mức đặt.
+  Trang giọng nói cũng có nút chỉnh và hiểu câu **“máy lạnh 22 độ”**.
 - Mô phỏng tự phục hồi sau khi Wokwi kết nối lại; có thể dừng trong lúc chờ phản hồi.
 - MQTT và nhận giọng nói cần Internet. Bản demo chỉ mở trên localhost;
   truy cập từ bên ngoài nhà chưa được cấu hình.

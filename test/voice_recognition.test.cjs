@@ -286,3 +286,29 @@ test('voice mode command goes through the Node-RED mode request topic', () => {
   a.advance(0);
   assert.deepEqual(a.publications, [{ topic: 'nhom26/room1/controller/mode/cmd', mode: 'AUTO', source: 'voice' }]);
 });
+
+test('spoken temperature settings use the selected profile and explicit AUTO does not switch modes', () => {
+  for (const [phrase,mode,profile] of [['máy lạnh 22 độ','MANUAL','manual'],['đặt nhiệt độ tự động 28 độ','MANUAL','auto'],['máy lạnh 16 độ','AUTO','auto']]) {
+    const a=app();
+    a.mqttMessage('nhom26/room1/controller/state',JSON.stringify({timestamp:Date.now(),mode,status:'online',acTarget:25}));
+    a.start();a.rec.results([[phrase,true]]);a.node('mic').click();a.advance(0);
+    assert.equal(a.publications.length,1);
+    assert.equal(a.publications[0].topic,'nhom26/room1/controller/temperature/cmd');
+    assert.equal(a.publications[0].profile,profile);
+    assert.match(a.spoken[0],/mức đặt/);
+  }
+});
+
+test('invalid spoken temperatures do not publish and buttons follow confirmed limits', () => {
+  const a=app();
+  for(const phrase of ['máy lạnh 15 độ','máy lạnh 32 độ','nhiệt độ 22,5 độ']) {
+    a.start();a.rec.results([[phrase,true]]);a.node('mic').click();a.advance(0);
+    assert.equal(a.publications.length,0);
+    assert.match(a.node('reply').textContent,/16 đến 31/);
+  }
+  a.mqttMessage('nhom26/room1/controller/state',JSON.stringify({timestamp:Date.now(),mode:'MANUAL',status:'online',acTarget:16}));
+  assert.equal(a.node('targetDown').disabled,true);
+  a.node('targetUp').click();
+  assert.equal(a.publications[0].temperature,17);
+  assert.equal(a.publications[0].profile,'manual');
+});

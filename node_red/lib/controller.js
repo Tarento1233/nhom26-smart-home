@@ -5,9 +5,15 @@ const FRESH_MS = 25000;
 const RETRY_MS = 5000;
 const NORMAL = { lightTimeout: 0, acTimeout: 600000 };
 const DEMO = { lightTimeout: 0, acTimeout: 15000 };
-const AC_ON = 25.5, AC_OFF = 24.5;
+const MIN_TARGET = 16, MAX_TARGET = 31;
+const validTarget = value => Number.isInteger(value) && value >= MIN_TARGET && value <= MAX_TARGET;
+const temperatureSettings = (saved = {}) => ({
+  auto: validTarget(saved?.auto) ? saved.auto : environment.TARGET,
+  manual: validTarget(saved?.manual) ? saved.manual : environment.TARGET
+});
+const targetTemp = s => s.acSettings[s.mode === 'MANUAL' ? 'manual' : 'auto'];
 
-function initialState(base = 'nhom26/room1') {
+function initialState(base = 'nhom26/room1', savedSettings) {
   if (!/^[A-Za-z0-9_/-]+$/.test(base) || base.endsWith('/')) throw new Error('Invalid MQTT base topic');
   return {
     base, brokerOnline: false, espStatus: 'unknown', lastSeen: null,
@@ -15,6 +21,7 @@ function initialState(base = 'nhom26/room1') {
     tempAt: null, luxAt: null, motionAt: null, lastMotionAt: null, noMotionSince: null,
     outputs: { light: null, ac: null }, pending: { light: null, ac: null },
     mode: 'AUTO', manualHold: false, manualUntil: 0, forcedSleep: false, demo: false, clock: 'real',
+    acSettings: temperatureSettings(savedSettings),
     lastModePublished: null, lastSnapshotAt: null, availability: 'offline',
     lastAction: 'Chờ dữ liệu ESP32', warning: '', ioError: '', environment:environment.initialState()
   };
@@ -44,6 +51,8 @@ function status(s, now) {
 }
 function snapshot(s, now) {
   s.environment ||= environment.initialState();
+  s.acSettings = temperatureSettings(s.acSettings);
+  const target = targetTemp(s);
   const timing = limits(s);
   const alerts = [];
   const deviceStatus = status(s, now);
@@ -70,9 +79,10 @@ function snapshot(s, now) {
     lightOffIn: s.noMotionSince === null ? null : Math.max(0, Math.ceil((timing.lightTimeout - (now - s.noMotionSince)) / 1000)),
     acOffIn: s.noMotionSince === null ? null : Math.max(0, Math.ceil((timing.acTimeout - (now - s.noMotionSince)) / 1000)),
     demo: s.demo, clock: s.clock, hour: hour(s, now),
-    environment:environment.snapshot(s.environment, now, live(s, now)),
+    acSettings: { ...s.acSettings }, acTarget: target, acTargetMin:MIN_TARGET, acTargetMax:MAX_TARGET,
+    environment:environment.snapshot(s.environment, now, live(s, now), target),
     timing, alerts, lastAction: s.lastAction,
-    thresholds: { lightPresenceOnly:false, autoLightPresenceOnly:true, manualAllowsEmptyRoom:true, acTarget:environment.TARGET, acOn:AC_ON, acOff:AC_OFF }
+    thresholds: { lightPresenceOnly:false, autoLightPresenceOnly:true, manualAllowsEmptyRoom:true, acTarget:target, acOn:s.acSettings.auto + 0.5, acOff:s.acSettings.auto - 0.5 }
   };
 }
 function csvCell(value) {
@@ -100,6 +110,7 @@ function command(payload) {
 
 function step(s, msg, now = Date.now()) {
   s.environment ||= environment.initialState();
+  s.acSettings = temperatureSettings(s.acSettings);
   // Preserve an active manual selection when updating the running flow in place.
   s.manualHold ??= s.manualUntil > now;
   s.manualUntil = 0; // Retained for older consumers; manual control no longer expires.
@@ -107,7 +118,7 @@ function step(s, msg, now = Date.now()) {
   const suffix = topic.startsWith(s.base + '/') ? topic.slice(s.base.length + 1) : topic;
   const known = /^sensor\/(temp_humid|light|motion)$/.test(suffix) || suffix === 'status' ||
     /^(controller\/)?actuator\/(light|ac)\/cmd$/.test(suffix) || /^actuator\/(light|ac)\/state$/.test(suffix) ||
-    suffix === 'controller/mode/cmd' || suffix === 'environment/state' || /^ui\/(light|ac|mode|demo|clock|environment|occupancy)$/.test(suffix) ||
+    suffix === 'controller/mode/cmd' || suffix === 'controller/temperature/cmd' || suffix === 'environment/state' || /^ui\/(light|ac|mode|demo|clock|environment|occupancy|autoTemperature|manualTemperature)$/.test(suffix) ||
     ['_tick', '_broker', '_error'].includes(topic);
   if (!known) return null;
 
@@ -232,6 +243,15 @@ function step(s, msg, now = Date.now()) {
       if (msg.retain) return null;
       const value = suffix === 'ui/mode' ? msg.payload : payloadObject(msg.payload).mode;
       setMode(value);
+    } else if (suffix === 'controller/temperature/cmd' || suffix === 'ui/autoTemperature' || suffix === 'ui/manualTemperature') {
+      if (msg.retain) return null;
+      const data = suffix.startsWith('ui/') ? {profile:suffix === 'ui/manualTemperature' ? 'manual' : 'auto', temperature:msg.payload} : payloadObject(msg.payload);
+      if (!['auto','manual'].includes(data.profile) || !validTarget(data.temperature)) throw new Error('Chọn nhiệt độ nguyên từ 16 đến 31°C cho Tự động hoặc Tự điều khiển');
+      s.acSettings[data.profile] = data.temperature;
+      s.lastAction = (data.profile === 'manual' ? 'Tự điều khiển' : 'Tự động / Giờ ngủ') + ': đặt máy lạnh ' + data.temperature + '°C';
+      s.warning = '';
+      record('temperature:set', JSON.stringify({profile:data.profile,temperature:data.temperature}));
+      changed = true;
     } else if (suffix === 'ui/demo') {
       if (typeof msg.payload !== 'boolean') throw new Error('Cờ demo phải là boolean');
       s.demo = msg.payload;
@@ -286,22 +306,23 @@ function step(s, msg, now = Date.now()) {
       if (fresh(s.motionAt, now) && s.motion === 0) request('light', 'OFF', 'Vắng người: tắt đèn ngay');
       if (fresh(s.motionAt, now) && s.motion === 1) request('light', 'ON', 'Có người: bật đèn');
       if (fresh(s.tempAt, now) && fresh(s.motionAt, now)) {
-        if (s.temp <= AC_OFF || (s.noMotionSince !== null && now - s.noMotionSince >= timing.acTimeout)) {
-          request('ac', 'OFF', s.temp <= AC_OFF ? 'Dưới 24,5°C: tạm ngừng làm lạnh' : 'Hết thời gian chờ chuyển động của máy lạnh');
-        } else if (s.temp >= AC_ON && occupied(s, timing.acTimeout, now)) {
-          request('ac', 'ON', 'Có người: duy trì mức đặt 25°C');
+        const acOn = s.acSettings.auto + 0.5, acOff = s.acSettings.auto - 0.5;
+        if (s.temp <= acOff || (s.noMotionSince !== null && now - s.noMotionSince >= timing.acTimeout)) {
+          request('ac', 'OFF', s.temp <= acOff ? 'Đã đủ mát theo mức đặt ' + s.acSettings.auto + '°C: tạm ngừng làm lạnh' : 'Hết thời gian chờ chuyển động của máy lạnh');
+        } else if (s.temp >= acOn && occupied(s, timing.acTimeout, now)) {
+          request('ac', 'ON', 'Có người: duy trì mức đặt ' + s.acSettings.auto + '°C');
         }
       }
     }
   }
 
-  const frame = environment.tick(s.environment, now, live(s, now), s.outputs.ac);
+  const frame = environment.tick(s.environment, now, live(s, now), s.outputs.ac, targetTemp(s));
   if (frame) commands.push({topic:`${s.base}/environment/cmd`,payload:frame,qos:'1',retain:false});
   const view = snapshot(s, now);
   if (s.brokerOnline) {
     if (s.lastModePublished !== s.mode || changed) {
       commands.push({ topic: `${s.base}/controller/mode`,
-        payload: JSON.stringify({ mode: s.mode, manualHold: !!s.manualHold, manualUntil: 0 }), qos: '1', retain: true });
+        payload: JSON.stringify({ mode: s.mode, manualHold: !!s.manualHold, manualUntil: 0, targetTemp:targetTemp(s) }), qos: '1', retain: true });
       s.lastModePublished = s.mode;
     }
     if (s.lastSnapshotAt === null || now - s.lastSnapshotAt >= 5000 || changed) {
@@ -316,4 +337,4 @@ function step(s, msg, now = Date.now()) {
   };
 }
 
-module.exports = { initialState, step, snapshot, csvCell, FRESH_MS, NORMAL, DEMO };
+module.exports = { initialState, step, snapshot, csvCell, temperatureSettings, FRESH_MS, NORMAL, DEMO };

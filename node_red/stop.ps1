@@ -4,7 +4,9 @@ if (-not (Test-Path -LiteralPath $manifest)) { Write-Host 'No managed Node-RED s
 $serviceInfo = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
 $service = Get-Process -Id $serviceInfo.pid -ErrorAction SilentlyContinue
 if (-not $service) { Write-Host 'Node-RED is already stopped.'; exit 0 }
-if ($service.ProcessName -ne 'node' -or $service.StartTime.ToString('o') -ne $serviceInfo.startedAt) {
+$actualStartedAt = [DateTimeOffset]$service.StartTime
+$recordedStartedAt = [DateTimeOffset]$serviceInfo.startedAt
+if ($service.ProcessName -ne 'node' -or $actualStartedAt.UtcDateTime.Ticks -ne $recordedStartedAt.UtcDateTime.Ticks) {
     throw 'Process identity changed. Refusing to stop an unrelated process.'
 }
 $processInfo = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $serviceInfo.pid)

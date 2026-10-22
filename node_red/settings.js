@@ -9,7 +9,7 @@ process.env.IOT_MQTT_PORT ||= '8884';
 for (const [key, suffix] of Object.entries({
   SENSOR: 'sensor/#', STATUS: 'status', RELAY_STATE: 'actuator/+/state',
   REQUEST: 'controller/actuator/+/cmd', LEGACY_CMD: 'actuator/+/cmd',
-  MODE_CMD: 'controller/mode/cmd', CONTROLLER_STATUS: 'controller/status', ENVIRONMENT_STATE:'environment/state'
+  MODE_CMD: 'controller/mode/cmd', TEMPERATURE_CMD:'controller/temperature/cmd', CONTROLLER_STATUS: 'controller/status', ENVIRONMENT_STATE:'environment/state'
 })) process.env['IOT_TOPIC_' + key] = process.env.IOT_MQTT_BASE + '/' + suffix;
 process.env.IOT_LOG_FILE ||= path.join(__dirname, 'data', 'telemetry.csv');
 const logFile = process.env.IOT_LOG_FILE;
@@ -28,7 +28,13 @@ module.exports = {
   functionTimeout: 5,
   functionExternalModules: false,
   runtimeState: { enabled: true, ui: true },
-  contextStorage: { default: { module: 'memory' } },
+  contextStorage: {
+    default: { module: 'memory' },
+    preferences: { module: 'localfilesystem', config: {
+      dir: process.env.IOT_PREFERENCES_DIR || path.join(__dirname, 'data', 'preferences'),
+      flushInterval: 1
+    } }
+  },
   logging: { console: { level: 'info', metrics: false, audit: false } },
   editorTheme: { projects: { enabled: false } }
 };

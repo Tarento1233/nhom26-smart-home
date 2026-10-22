@@ -21,27 +21,29 @@ add({id:BROKER,type:'mqtt-broker',name:'HiveMQ · nhóm 26',broker:'${IOT_MQTT_H
   birthTopic:'${IOT_TOPIC_CONTROLLER_STATUS}',birthQos:'1',birthRetain:'true',birthPayload:'online',birthMsg:{},
   closeTopic:'${IOT_TOPIC_CONTROLLER_STATUS}',closeQos:'1',closeRetain:'true',closePayload:'offline',closeMsg:{},
   willTopic:'${IOT_TOPIC_CONTROLLER_STATUS}',willQos:'1',willRetain:'true',willPayload:'offline',willMsg:{},queueQoSZero:false});
-comment('n26-main-note',MAIN,'Luồng chính: cảm biến → rule → MQTT → ESP32','AUTO/SLEEP: đèn theo người, không dùng ngưỡng lux; vắng người tắt ngay trong AUTO/SLEEP. Máy lạnh đặt 25°C, relay cho phép làm lạnh ở >=25,5°C, tạm ngừng ở <=24,5°C. Mô hình inverter giảm mức làm lạnh để giữ 25°C. AC tắt sau 10 phút vắng (demo 15 giây). MANUAL giữ đến khi người dùng đổi chế độ, cho phép bật đèn khi phòng vắng. Mô hình chỉ hiển thị sau phản hồi ESP32.',430,40);
+comment('n26-main-note',MAIN,'Luồng chính: cảm biến → rule → MQTT → ESP32','AUTO/SLEEP: đèn theo người, không dùng ngưỡng lux; vắng người tắt ngay trong AUTO/SLEEP. Máy lạnh đặt 16–31°C, nhớ riêng AUTO/SLEEP và MANUAL. Relay AUTO cho làm lạnh ở mức đặt +0,5°C, tạm ngừng ở mức đặt -0,5°C. Mô hình inverter giảm làm lạnh để giữ mức đã chọn. AC tắt sau 10 phút vắng (demo 15 giây). MANUAL giữ đến khi người dùng đổi chế độ, cho phép bật đèn khi phòng vắng. Mô hình chỉ hiển thị sau phản hồi ESP32.',430,40);
 const inputs = [
   ['SENSOR','Cảm biến DHT22 / LDR / PIR'], ['STATUS','ESP32 online / offline'],
   ['RELAY_STATE','Phản hồi relay'], ['REQUEST','Lệnh tay: voice / Home Assistant'],
   ['LEGACY_CMD','Tương thích lệnh MQTT cũ'], ['MODE_CMD','Chọn AUTO / MANUAL / SLEEP'],
-  ['ENVIRONMENT_STATE','Xác nhận mô hình nhiệt độ ESP32']
+  ['ENVIRONMENT_STATE','Xác nhận mô hình nhiệt độ ESP32'], ['TEMPERATURE_CMD','Đặt nhiệt độ máy lạnh 16–31°C']
 ];
 inputs.forEach(([topic,name],i) => add({id:'n26-in-'+i,type:'mqtt in',z:MAIN,name,
   topic:'${IOT_TOPIC_'+topic+'}',qos:'1',datatype:'utf8',broker:BROKER,nl:false,rap:true,rh:0,inputs:0,
   x:200,y:110+i*55,wires:[['n26-engine']]}));
 add({id:'n26-tick',type:'inject',z:MAIN,name:'Lịch & timeout mỗi giây',props:[{p:'topic',vt:'str'}],
-  repeat:'1',crontab:'',once:true,onceDelay:1,topic:'_tick',x:200,y:505,wires:[['n26-engine']]});
-add({id:'n26-broker-status',type:'status',z:MAIN,name:'Theo dõi kết nối broker',scope:['n26-in-0'],x:190,y:565,wires:[['n26-map-broker']]});
-fn('n26-map-broker',MAIN,'Trạng thái broker',"return {topic:'_broker',payload:msg.status.fill === 'green'};",420,565,[['n26-engine']]);
+  repeat:'1',crontab:'',once:true,onceDelay:1,topic:'_tick',x:200,y:565,wires:[['n26-engine']]});
+add({id:'n26-broker-status',type:'status',z:MAIN,name:'Theo dõi kết nối broker',scope:['n26-in-0'],x:190,y:625,wires:[['n26-map-broker']]});
+fn('n26-map-broker',MAIN,'Trạng thái broker',"return {topic:'_broker',payload:msg.status.fill === 'green'};",420,625,[['n26-engine']]);
 linkIn('n26-controls-in',MAIN,'Từ dashboard / API',510,470,['n26-controls-out','n26-api-out'],'n26-engine');
 const engine = `const roomEnvironment = (() => { const module = {exports:{}};\n${environment}\nreturn module.exports; })();
 const controller = (() => { const module = {exports:{}}; const require = (id) => { if(id==='./environment') return roomEnvironment; throw new Error('Unknown module'); };\n${controller}\nreturn module.exports; })();
-const state = context.get('room') || controller.initialState(env.get('IOT_MQTT_BASE') || 'nhom26/room1');
+const savedSettings = context.get('acSettings', 'preferences');
+const state = context.get('room') || controller.initialState(env.get('IOT_MQTT_BASE') || 'nhom26/room1', savedSettings);
 const result = controller.step(state, msg, Date.now());
 if (!result) return null;
 context.set('room', result.state);
+if (JSON.stringify(savedSettings) !== JSON.stringify(result.state.acSettings)) context.set('acSettings', result.state.acSettings, 'preferences');
 const view = result.view.payload;
 node.status({fill:view.status==='online'?'green':'yellow',shape:'dot',text:view.mode+' · '+view.status});
 const response = msg.req ? {...msg, statusCode:result.error?400:200, headers:{'Content-Type':'application/json; charset=utf-8'}, payload:result.error?{...view,error:result.error}:view} : null;
@@ -87,8 +89,8 @@ add({id:'n26-http-status',type:'http in',z:API,name:'GET /api/status',url:'/api/
 fn('n26-status-request',API,'Lấy snapshot mới',"msg.topic='_tick'; return msg;",390,110,[['n26-api-out']]);
 add({id:'n26-http-control',type:'http in',z:API,name:'POST /api/control',url:'/api/control',method:'post',upload:false,swaggerDoc:'',x:150,y:175,wires:[['n26-validate-request']]});
 fn('n26-validate-request',API,'Kiểm tra yêu cầu',`const p=msg.payload;
-if (!p || !['light','ac','mode','demo','clock','environment','occupancy'].includes(p.kind)) {
- msg.statusCode=400;msg.payload={error:'kind phải là light/ac/mode/demo/clock/environment/occupancy'}; return [null,msg];
+if (!p || !['light','ac','mode','demo','clock','environment','occupancy','autoTemperature','manualTemperature'].includes(p.kind)) {
+ msg.statusCode=400;msg.payload={error:'kind phải là light/ac/mode/demo/clock/environment/occupancy/autoTemperature/manualTemperature'}; return [null,msg];
 }
 msg.topic='ui/'+p.kind; msg.payload=p.value; return [msg,null];`,390,175,[['n26-api-out'],['n26-http-response']]);
 linkOut('n26-api-out',API,'Yêu cầu → controller',620,140,['n26-controls-in']);

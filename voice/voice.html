@@ -72,6 +72,7 @@
     max-height: 180px; overflow: auto; display: grid; gap: 4px; font-family: ui-monospace, Consolas, monospace; }
   .warn { background: #fff4e5; border-color: #f3cf9b; color: #7a4a0c; font-size: .9rem; }
   @media (max-width: 560px) { .devices { grid-template-columns: 1fr; } .sensors { grid-template-columns: 1fr 1fr; } }
+.voice-temperature{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0}.voice-temperature button{width:46px;min-height:46px;font-size:25px;color:var(--teal);background:white;border:1px solid var(--line);border-radius:10px}.voice-temperature button:disabled{opacity:.4;cursor:not-allowed}.voice-temperature output{font-size:32px;font-weight:700;color:var(--teal);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -107,7 +108,7 @@
     <div class="btns" id="modeButtons" style="display:flex;gap:8px">
       <button data-mode="AUTO">Tự động</button><button data-mode="MANUAL">Tự điều khiển</button><button data-mode="SLEEP">Giờ ngủ</button>
     </div>
-    <div class="hint" id="manualRemaining" style="margin-top:10px">Tự động: nhà bật tắt giúp bạn. Tự điều khiển: bạn chọn bật tắt. Giờ ngủ: đèn theo người, máy lạnh giữ 25°C.</div>
+    <div class="hint" id="manualRemaining" style="margin-top:10px">Tự động: nhà bật tắt giúp bạn. Tự điều khiển: bạn chọn bật tắt. Giờ ngủ: đèn theo người, máy lạnh dùng mức nhiệt độ Tự động bạn đã đặt.</div>
     <span id="modePill" class="pill" style="margin-top:12px">Chế độ: đang chờ</span>
   </details>
 
@@ -119,7 +120,9 @@
     </div>
     <div class="card dev ac" id="devAc">
       <div class="top"><h2>Máy lạnh</h2><span class="state" id="acState">—</span></div>
-      <p class="hint">Tự giữ quanh 25°C khi nhà đang chạy tự động.</p>
+      <p class="hint" id="targetProfile">Nhiệt độ bạn muốn · đang chờ</p>
+      <div class="voice-temperature" role="group" aria-label="Chỉnh nhiệt độ máy lạnh"><button id="targetDown" aria-label="Giảm nhiệt độ máy lạnh" disabled>−</button><output id="targetTemperature" aria-label="Nhiệt độ máy lạnh đã đặt" aria-live="polite">—</output><button id="targetUp" aria-label="Tăng nhiệt độ máy lạnh" disabled>+</button></div>
+      <p class="hint">16–31°C · Đổi độ giữ nguyên chế độ. Hoặc nói “máy lạnh 22 độ”.</p>
       <div class="btns"><button data-dev="ac" data-cmd="ON">Bật máy lạnh</button><button data-dev="ac" data-cmd="OFF">Tắt máy lạnh</button></div>
     </div>
   </section>
@@ -150,10 +153,10 @@ const T = {
   tempHumid: BASE + "/sensor/temp_humid", light: BASE + "/sensor/light",
   motion: BASE + "/sensor/motion", status: BASE + "/status",
   controllerStatus: BASE + "/controller/status", controllerState: BASE + "/controller/state",
-  modeCmd: BASE + "/controller/mode/cmd",
+  modeCmd: BASE + "/controller/mode/cmd", temperatureCmd: BASE + "/controller/temperature/cmd",
 };
 const state = { light: null, ac: null, temp: null, hum: null, lux: null, presence: null,
-  espOnline: false, controllerOnline: false, controllerLastAt: 0, mode: null, simulated:false };
+  espOnline: false, controllerOnline: false, controllerLastAt: 0, mode: null, simulated:false, acTarget:25, acSettings:{auto:25,manual:25} };
 const $ = (id) => document.getElementById(id);
 
 function log(msg) {
@@ -200,6 +203,8 @@ client.on("message", (topic, payload) => {
   } else if (topic === T.controllerState && data) {
     state.controllerLastAt = Number(data.timestamp) || 0;
     state.mode = data.mode;
+    state.acTarget = data.acTarget ?? 25;
+    state.acSettings = data.acSettings || {auto:25,manual:25};
     state.presence = data.motion;
     state.presenceFresh = data.motionFresh === true;
     state.simulated = !!data.environment?.active;
@@ -242,6 +247,10 @@ function renderController() {
   $("roomPill").className = "pill " + (ready && state.espOnline ? "on" : "off");
   $("controllerPill").textContent = "Node-RED: " + (ready ? "online" : "chưa có dữ liệu mới");
   $("controllerPill").className = "pill " + (ready ? "on" : "off");
+  $("targetTemperature").textContent = state.acTarget + "°C";
+  $("targetProfile").textContent = "Nhiệt độ bạn muốn · " + (state.mode === "MANUAL" ? "Tự điều khiển" : "Tự động / Giờ ngủ");
+  $("targetDown").disabled = !ready || state.acTarget <= 16;
+  $("targetUp").disabled = !ready || state.acTarget >= 31;
   document.querySelectorAll('#modeButtons button').forEach(button => {
     button.classList.toggle('selected', button.dataset.mode === state.mode);
     button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
@@ -270,6 +279,22 @@ function selectMode(mode) {
   return true;
 }
 
+function setTemperature(temperature, profile = state.mode === "MANUAL" ? "manual" : "auto") {
+  if (!Number.isInteger(temperature) || temperature < 16 || temperature > 31) {
+    $("reply").textContent = "Chọn nhiệt độ từ 16 đến 31°C nhé.";
+    return false;
+  }
+  if (!controllerReady()) {
+    $("reply").textContent = "Chờ căn phòng kết nối để lưu nhiệt độ.";
+    return false;
+  }
+  client.publish(T.temperatureCmd, JSON.stringify({profile, temperature, source:"voice"}));
+  log("Đặt nhiệt độ " + (profile === "manual" ? "Tự điều khiển: " : "Tự động: ") + temperature + "°C");
+  return true;
+}
+$("targetDown").addEventListener("click", () => setTemperature(state.acTarget - 1));
+$("targetUp").addEventListener("click", () => setTemperature(state.acTarget + 1));
+
 document.querySelectorAll(".btns button[data-dev]").forEach(b =>
   b.addEventListener("click", () => send(b.dataset.dev, b.dataset.cmd)));
 document.querySelectorAll("#modeButtons button").forEach(b =>
@@ -292,6 +317,14 @@ function handle(textRaw) {
   const text = " " + textRaw.toLowerCase().trim() + " ";
   $("heard").textContent = "“" + textRaw + "”";
   log("Nghe: " + textRaw);
+
+  const degrees = text.match(/(-?\d+(?:[.,]\d+)?)\s*(?:độ|°)/);
+  if (degrees && (firstIndex(text, DEVICE_WORDS.ac) >= 0 || text.includes("nhiệt độ"))) {
+    const temperature = Number(degrees[1].replace(",", "."));
+    const profile = text.includes("tự động") || text.includes("giờ ngủ") ? "auto" : text.includes("tự điều khiển") || text.includes("thủ công") ? "manual" : state.mode === "MANUAL" ? "manual" : "auto";
+    if (setTemperature(temperature, profile)) speak("Đã gửi mức đặt " + temperature + " độ C cho " + (profile === "manual" ? "Tự điều khiển" : "Tự động"));
+    return;
+  }
 
   if (text.includes("chế độ") || text.includes("tự động") || text.includes("tự điều khiển") || text.includes("thủ công")) {
     const mode = text.includes("tự động") ? "AUTO" : text.includes("ngủ") ? "SLEEP" : text.includes("thủ công") || text.includes("tự điều khiển") ? "MANUAL" : null;

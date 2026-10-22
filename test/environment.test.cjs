@@ -5,6 +5,17 @@ const controller = require('../node_red/lib/controller');
 const BASE = 'nhom26/test-thermal';
 const DAY = Date.parse('2026-10-19T07:00:00Z');
 
+test('room physics converges to the full 16–31 range and warmer settings reduce cooling', () => {
+  for(const target of [16,22,28,31]) {
+    let t=30;
+    for(let i=0;i<1200;i++) t=env.physics(t,60,'ON',1,true,target).temp;
+    assert.ok(Math.abs(t-target)<.01,`Reached ${target}C, got ${t}`);
+  }
+  const warmer=env.physics(22,50,'ON',1,true,28);
+  assert.ok(warmer.temp>22);
+  assert.equal(warmer.coolingPercent,0,'A cooling-only AC waits for the room to warm naturally');
+});
+
 function loopback() {
   const state = controller.initialState(BASE);
   let now = DAY, enabled = false, seq = 0, data = {temp:29,hum:60,presence:0};
@@ -39,6 +50,24 @@ function loopback() {
   send('_broker',true);send('actuator/light/state',{state:'OFF'});send('actuator/ac/state',{state:'OFF'});heartbeat();
   return {state,send,deliver,advance,relayChanges,frames,setNow:value=>{now=value;},now:()=>now};
 }
+
+test('ESP32 feedback converges to selected AUTO and MANUAL targets without faking telemetry', () => {
+  const r=loopback();r.deliver(r.send('ui/environment',true));
+  r.deliver(r.send('ui/autoTemperature',28));r.advance(240);
+  assert.ok(Math.abs(r.state.temp-28)<=.1);
+  assert.equal(r.state.mode,'AUTO');
+  r.deliver(r.send('ui/mode','MANUAL'));
+  const before=r.state.temp;
+  r.deliver(r.send('ui/manualTemperature',16));
+  assert.equal(r.state.temp,before,'Temperature setting is not sensor telemetry');
+  r.advance(600);
+  assert.ok(Math.abs(r.state.temp-16)<=.1);
+  assert.equal(r.state.environment.direction,'holding');
+  assert.ok(r.frames.some(frame=>frame.startsWith('SIM ')&&+frame.split(' ')[2]<18));
+  r.deliver(r.send('ui/mode','AUTO'));r.advance(600);
+  assert.ok(Math.abs(r.state.temp-28)<=.1);
+  assert.equal(r.state.acSettings.manual,16);
+});
 
 test('physics changes gradually and stays bounded during long manual operation', () => {
   assert.ok(env.physics(29,60,'ON',1,true).temp < 29);

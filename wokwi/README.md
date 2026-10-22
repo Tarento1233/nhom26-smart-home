@@ -75,10 +75,11 @@ Có thể chỉ định đường dẫn bộ công cụ:
 
 Phần Node-RED, dashboard, AUTO/MANUAL/SLEEP và log CSV đã được bổ sung trong
 `../node_red`. Xem [hướng dẫn Node-RED](../node_red/README.md).
-Firmware gửi heartbeat 5 giây và nhận chế độ để hiển thị LCD:
+Firmware gửi heartbeat 5 giây và nhận chế độ/nhiệt độ đặt để hiển thị LCD.
+Dòng trên: `T` là nhiệt độ phòng, `S` là mức đặt máy lạnh (16–31°C), `H` là độ ẩm. Dòng dưới:
 `D0/D1` = đèn tắt/bật, `A0/A1` = máy lạnh tắt/bật, tiếp theo là chế độ và `OK`.
 Ký tự **S** ở ô cuối dòng dưới cho biết đang dùng mô hình phòng tự động.
-Trên dashboard bấm Bắt đầu trải nghiệm để xem nhiệt độ giảm về quanh 25°C khi AC bật,
+Trên dashboard bấm Bắt đầu trải nghiệm để xem nhiệt độ thay đổi về mức bạn chọn bằng nút − / + khi AC bật (mặc định 25°C),
 rồi mô hình inverter giảm mức làm lạnh để giữ nhiệt. LED xanh ON cho biết máy
 lạnh được phép chạy; phần trăm làm lạnh chỉ là dữ liệu mô hình trên dashboard.
 Đèn bật khi có người, tắt khi báo vắng, kể cả phòng sáng và chế độ SLEEP.

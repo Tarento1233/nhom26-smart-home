@@ -44,6 +44,7 @@ unsigned long lastMqttTryMs = 0;
 bool wasConnected = false;
 String clientId;
 String controlMode = "--";
+int acTarget = 25;
 bool environmentEnabled = false;
 float environmentTemp = 30, environmentHumidity = 60;
 int environmentPresence = 1;
@@ -83,7 +84,7 @@ void updateLcd() {
     lcd.print("T:--.-C H:--%   ");
   } else {
     char line[17];
-    snprintf(line, sizeof(line), "T:%4.1fC H:%2.0f%%   ", lastTemp, lastHum);
+    snprintf(line, sizeof(line), "T:%4.1f S:%2d H:%2.0f", lastTemp, acTarget, lastHum);
     lcd.print(line);
   }
   lcd.setCursor(0, 1);
@@ -130,7 +131,7 @@ void onMessage(char *topic, byte *payload, unsigned int len) {
       int presence;
       char trailing;
       if (sscanf(msg.c_str(), "SIM %lu %f %f %d %c", &seq, &temp, &humidity, &presence, &trailing) != 4 ||
-          !isfinite(temp) || !isfinite(humidity) || temp < 18 || temp > 40 ||
+          !isfinite(temp) || !isfinite(humidity) || temp < 16 || temp > 40 ||
           humidity < 30 || humidity > 80 || (presence != 0 && presence != 1)) {
         Serial.println("Invalid environment frame, ignored");
         return;
@@ -148,9 +149,19 @@ void onMessage(char *topic, byte *payload, unsigned int len) {
   }
 
   if (strcmp(topic, T_MODE) == 0) {
-    if (msg.indexOf("MANUAL") >= 0) controlMode = "MANUAL";
-    else if (msg.indexOf("SLEEP") >= 0) controlMode = "SLEEP";
-    else if (msg.indexOf("AUTO") >= 0) controlMode = "AUTO";
+    int targetKey = msg.indexOf("\"TARGETTEMP\"");
+    if (targetKey >= 0) {
+      int colon = msg.indexOf(':', targetKey);
+      int requested = colon >= 0 ? msg.substring(colon + 1).toInt() : 0;
+      if (requested >= 16 && requested <= 31) acTarget = requested;
+    }
+    msg.replace(" ", "");
+    msg.replace("\n", "");
+    msg.replace("\r", "");
+    msg.replace("\t", "");
+    if (msg.indexOf("\"MODE\":\"MANUAL\"") >= 0) controlMode = "MANUAL";
+    else if (msg.indexOf("\"MODE\":\"SLEEP\"") >= 0) controlMode = "SLEEP";
+    else if (msg.indexOf("\"MODE\":\"AUTO\"") >= 0) controlMode = "AUTO";
     updateLcd();
     return;
   }

@@ -20,13 +20,29 @@ tự trả về AUTO. Chọn **Tự động** để áp dụng lại cảm biế
 Đây là hành vi điều khiển của bản demo; server hiện chỉ mở trên localhost.
 Muốn sử dụng từ điện thoại khi ở ngoài nhà cần cấu hình truy cập từ xa riêng.
 
-## Phòng tự động — mô phỏng inverter giữ 25°C
+## Chọn nhiệt độ 16–31°C
+
+Chọn **Tự điều khiển** hoặc **Tự động**, rồi bấm **− / +** ở thẻ Máy lạnh.
+Mỗi chế độ nhớ mức riêng; **Giờ ngủ** dùng chung mức Tự động. Đổi mức đặt không
+đổi chế độ, không tự bật máy đang tắt trong MANUAL và không giả số cảm biến.
+Mặc định cả hai mức là 25°C. Nhiệt độ phòng hiện tại hiển thị riêng ở phía trên.
+Cài đặt được lưu trong `data/preferences/` bằng context store `preferences`
+trong `settings.js`; tồn tại qua restart. Import flow sang Node-RED khác cần
+khai báo store này theo `settings.js`. Test dùng `IOT_PREFERENCES_DIR` riêng.
+
+API: `POST /api/control` với `{ "kind":"autoTemperature", "value":27 }` hoặc
+`{ "kind":"manualTemperature", "value":22 }`. Chỉ nhận số nguyên từ 16 đến 31.
+Trang voice dùng cùng cài đặt qua MQTT; có thể nói **“máy lạnh 22 độ”** hoặc
+**“đặt nhiệt độ tự động 27 độ”**. Câu thứ hai chỉ lưu mức Tự động, không đổi chế độ.
+
+## Phòng tự động — mô phỏng inverter theo mức đặt
 
 Trên dashboard bấm **Bắt đầu trải nghiệm**. Nút này đặt 14:00, AUTO, demo nhanh,
 có người và nhiệt độ khởi đầu 30°C. Máy lạnh làm mát dần rồi giảm mức làm lạnh
-để giữ quanh **25°C**. Sau khoảng 1–2 phút, nhiệt độ ổn định thay vì lặp vòng
-25–29°C. Dashboard hiện mức làm lạnh mô phỏng, từ 100% lúc nóng xuống khoảng
-31% khi cân bằng trong mô hình này. Đây không phải công suất điện hay số kWh đo được.
+để giữ quanh **mức đặt của chế độ đang chọn** (mặc định 25°C). Mức lạnh sâu
+cần thêm thời gian; chọn mức cao hơn sẽ giảm làm lạnh và để phòng ấm dần tự nhiên.
+Máy chỉ làm lạnh, không có bộ sưởi. Dashboard hiện mức làm lạnh mô phỏng;
+với mức mặc định 25°C, khi có người mức cân bằng khoảng 31%. Đây không phải công suất điện hay số kWh đo được.
 Mô hình tăng tốc phục vụ demo, không phải phép đo phòng thật hoặc dự đoán một căn
 phòng cụ thể. Khung dữ liệu gửi mỗi 2 giây qua MQTT.
 
@@ -34,7 +50,7 @@ Mô hình nằm ở `lib/environment.js`, tính theo phản hồi ON/OFF của r
 Relay ON nghĩa là máy lạnh được phép hoạt động; bộ điều chỉnh inverter nằm trong
 mô hình và tự thay đổi mức làm lạnh. Relay LED xanh không biểu diễn tốc độ máy nén.
 Nhiệt vào `H = (32 - T)/100 + 0,005` khi có người; mức làm lạnh
-`u = clamp((H + 0,08*(T - 25))/0,24, 0, 1)` khi relay ON, bằng 0 khi OFF;
+`u = clamp((H + 0,08*(T - target))/0,24, 0, 1)` khi relay ON, bằng 0 khi OFF;
 `dT/dt = H - 0,24*u`. Không dùng phần trăm này để suy ra tiền điện.
 Node-RED gửi khung mô phỏng; ESP32 áp dụng, hiển thị LCD và gửi trở lại các topic
 cảm biến hiện có. Dashboard, voice và Home Assistant cùng nhận giá trị đó.
@@ -89,17 +105,17 @@ Launcher kiểm tra PID và thời điểm khởi động để không tắt nh�
 |---|---|
 | Đèn AUTO/SLEEP | Tín hiệu có người → bật, không phụ thuộc lux |
 | Tắt đèn AUTO/SLEEP | Tín hiệu vắng → tắt ngay sau khi nhận dữ liệu |
-| Máy lạnh AUTO/SLEEP | Mức đặt **25°C**; bật relay ở **≥25,5°C** khi có người, giữ ON tại 25°C để mô hình giảm mức làm lạnh |
-| Tắt máy lạnh | Nhiệt độ **≤24,5°C**, hoặc không chuyển động **10 phút** → tắt |
+| Máy lạnh AUTO/SLEEP | Mức đặt **16–31°C**; bật relay ở **mức đặt + 0,5°C** khi có người, giữ ON gần mức đặt để mô hình giảm mức làm lạnh |
+| Tắt máy lạnh AUTO/SLEEP | Nhiệt độ **≤ mức đặt − 0,5°C**, hoặc không chuyển động **10 phút** → tắt |
 | MANUAL | Chọn Tự điều khiển hoặc gửi lệnh bật/tắt sẽ giữ MANUAL đến khi chọn chế độ khác. Đèn/máy lạnh giữ theo lệnh tay, cho phép bật trước khi về nhà dù phòng vắng; không có hẹn giờ tự trở lại AUTO |
-| SLEEP | Theo lịch **23:00–06:00, UTC+7**; cùng rule đèn theo người và máy lạnh đặt 25°C |
+| SLEEP | Theo lịch **23:00–06:00, UTC+7**; cùng rule đèn theo người và mức đặt của Tự động |
 | Nút SLEEP | Ép chế độ ngủ đến khi chọn AUTO hoặc có lệnh tay; AUTO trở lại lịch theo giờ thật/giờ demo |
 
 PIR báo chuyển động, không chứng minh người đã rời phòng. Theo yêu cầu demo, đèn
 tắt khi PIR về 0 nên người ngồi yên cũng có thể làm đèn tắt. Dùng Có người/Vắng
 người trong Phòng tự động để trình diễn rõ trạng thái phòng. AC vẫn giữ thời gian
 chờ vắng trong AUTO/SLEEP. Trong MANUAL, cả đèn và AC giữ lệnh tay đến khi người dùng đổi chế độ.
-Khi dùng DHT22 chỉnh tay, relay có vùng trễ 24,5–25,5°C; thanh DHT22 không tự đổi
+Khi dùng DHT22 chỉnh tay, relay có vùng trễ ±0,5°C quanh mức đặt; thanh DHT22 không tự đổi
 theo relay. Muốn xem giữ nhiệt phải bật Phòng tự động.
 Trạng thái relay trên dashboard lấy từ phản hồi ESP32, không tự đổi thành công
 chỉ vì đã bấm nút. Lệnh chưa có xác nhận được gửi lại tối đa 3 lần, mỗi lần cách 5 giây.
@@ -108,7 +124,8 @@ Node-RED không điều khiển tự động từ dữ liệu MQTT retained mớ
 Firmware gửi heartbeat cảm biến và online mỗi 5 giây; quá 25 giây không có dữ liệu
 mới sẽ báo dữ liệu cũ. Rule từng thiết bị chỉ chạy khi các cảm biến cần thiết còn mới.
 
-LCD: `D0/D1` = đèn tắt/bật, `A0/A1` = máy lạnh tắt/bật;
+LCD dòng trên: `T` = nhiệt độ phòng, `S` = mức đặt máy lạnh, `H` = độ ẩm.
+Dòng dưới: `D0/D1` = đèn tắt/bật, `A0/A1` = máy lạnh tắt/bật;
 tiếp theo là `AUTO`, `MANUAL` hoặc `SLEEP`; `OK` = ESP32 nối được MQTT.
 
 ## Demo nhanh trong 3–5 phút
@@ -166,10 +183,11 @@ Tiền tố mặc định `nhom26/room1`:
 | `status` | `online` / `offline` | ESP32 heartbeat/LWT |
 | `controller/actuator/light/cmd` | `{"cmd":"ON","source":"voice"}` | Giao diện/HA → Node-RED |
 | `controller/actuator/ac/cmd` | `{"cmd":"OFF"}` | Giao diện/HA → Node-RED |
+| `controller/temperature/cmd` | `{"profile":"auto","temperature":27}` | Giao diện → Node-RED; profile `auto` hoặc `manual`, không retained |
 | `controller/mode/cmd` | `{"mode":"AUTO"}` | Giao diện → Node-RED |
 | `actuator/light/cmd`, `actuator/ac/cmd` | `{"cmd":"ON","source":"node-red"}` | Node-RED → ESP32 |
 | `actuator/light/state`, `actuator/ac/state` | `{"state":"ON"}` | ESP32 phản hồi |
-| `controller/mode` | `{"mode":"MANUAL","manualHold":true,"manualUntil":0}` | Node-RED → LCD; MANUAL không có thời hạn |
+| `controller/mode` | `{"mode":"MANUAL","manualHold":true,"manualUntil":0,"targetTemp":22}` | Node-RED → LCD; MANUAL không có thời hạn |
 | `controller/state` | Snapshot JSON, timestamp mili giây | Node-RED → trang voice |
 | `controller/status` | `online` / `offline` | Node-RED birth/LWT |
 | `environment/cmd` | `SIM seq temp humidity presence` hoặc `SENSOR` | Node-RED → ESP32; khung mô hình hoặc trở về cảm biến |

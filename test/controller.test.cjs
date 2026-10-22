@@ -4,6 +4,12 @@ const controller = require('../node_red/lib/controller');
 const BASE = 'nhom26/test-room';
 const DAY = Date.parse('2026-10-17T07:00:00Z'); // 14:00 Vietnam.
 
+test('temperature preferences restore independently and invalid saved values use defaults', () => {
+  assert.deepEqual(controller.initialState(BASE, {auto:28,manual:16}).acSettings,{auto:28,manual:16});
+  assert.deepEqual(controller.initialState(BASE, {auto:32,manual:'22'}).acSettings,{auto:25,manual:25});
+  assert.deepEqual(controller.initialState(BASE, null).acSettings,{auto:25,manual:25});
+});
+
 function room() {
   let now = DAY;
   const state = controller.initialState(BASE);
@@ -43,6 +49,63 @@ function room() {
   return { state, send, commands, acknowledge, heartbeat, advance, now: () => now,
     setNow: value => { now = value; }, view: () => controller.snapshot(state, now) };
 }
+
+test('temperature settings keep the selected mode, power and separate profiles', () => {
+  const r=room();
+  r.send('ui/autoTemperature',28);
+  assert.equal(r.state.mode,'AUTO');
+  assert.equal(r.view().acTarget,28);
+  r.send('ui/mode','MANUAL');
+  r.send('ui/manualTemperature',22);
+  assert.equal(r.state.mode,'MANUAL');
+  assert.equal(r.state.outputs.ac,'OFF','Changing temperature must not turn on manual AC');
+  assert.equal(r.view().acTarget,22);
+  assert.equal(r.view().environment.targetTemp,22);
+  r.advance(60000);
+  assert.equal(r.state.mode,'MANUAL');
+  r.send('ui/mode','AUTO');
+  assert.equal(r.view().acTarget,28);
+  r.send('ui/clock','night');
+  assert.equal(r.state.mode,'SLEEP');
+  r.send('ui/autoTemperature',27);
+  assert.equal(r.state.mode,'SLEEP');
+  assert.equal(r.view().acTarget,27);
+  assert.deepEqual(r.view().acSettings,{auto:27,manual:22});
+  r.send('ui/mode','MANUAL');
+  assert.equal(r.view().acTarget,22);
+});
+
+test('automatic relay hysteresis follows the chosen setpoint', () => {
+  const r=room();
+  r.acknowledge(r.send('sensor/motion',{presence:1}));
+  r.send('ui/autoTemperature',27);
+  r.acknowledge(r.send('sensor/temp_humid',{temp:26.5,hum:60}));
+  assert.equal(r.state.outputs.ac,'OFF');
+  r.acknowledge(r.send('sensor/temp_humid',{temp:27,hum:60}));
+  assert.equal(r.state.outputs.ac,'OFF');
+  r.acknowledge(r.send('sensor/temp_humid',{temp:27.5,hum:60}));
+  assert.equal(r.state.outputs.ac,'ON');
+  r.acknowledge(r.send('sensor/temp_humid',{temp:27,hum:60}));
+  assert.equal(r.state.outputs.ac,'ON');
+  assert.equal(r.view().thresholds.acOn,27.5);
+  assert.equal(r.view().thresholds.acOff,26.5);
+});
+
+test('temperature requests validate 16–31 integers and ignore retained commands', () => {
+  const r=room();
+  for(const value of [15,32,22.5,'22',null,NaN,Infinity]) {
+    assert.match(r.send('ui/autoTemperature',value).error,/16 đến 31/);
+    assert.equal(r.state.acSettings.auto,25);
+  }
+  assert.equal(r.send('controller/temperature/cmd',{profile:'auto',temperature:16},true),null);
+  assert.equal(r.state.acSettings.auto,25);
+  r.send('controller/temperature/cmd',{profile:'auto',temperature:16});
+  const result=r.send('controller/temperature/cmd',{profile:'manual',temperature:31});
+  assert.deepEqual(r.view().acSettings,{auto:16,manual:31});
+  assert.equal(r.state.mode,'AUTO');
+  assert.equal(JSON.parse(result.mqtt.find(m=>m.topic.endsWith('/controller/mode')).payload).targetTemp,16);
+  assert.match(r.send('controller/temperature/cmd',{profile:'other',temperature:22}).error,/16 đến 31/);
+});
 
 test('presence switches on both loads in a warm room, with real feedback', () => {
   const r = room();

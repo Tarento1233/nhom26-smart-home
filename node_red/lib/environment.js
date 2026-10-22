@@ -41,23 +41,23 @@ function acknowledge(e, data, now, retained) {
     if (restarted) retry(e, now);
   }
 }
-function coolingLevel(temp, ac, occupied) {
+function coolingLevel(temp, ac, occupied, target = TARGET) {
   if (ac !== 'ON') return 0;
   const heat = (32 - temp) / 100 + (occupied ? 0.005 : 0);
   // Feed forward the room's heat gain, then reduce output near the setpoint.
-  return Math.min(1, Math.max(0, (heat + 0.08 * (temp - TARGET)) / MAX_COOLING));
+  return Math.min(1, Math.max(0, (heat + 0.08 * (temp - target)) / MAX_COOLING));
 }
-function physics(temp, humidity, ac, seconds, occupied) {
+function physics(temp, humidity, ac, seconds, occupied, target = TARGET) {
   const dt = Math.min(5, Math.max(0, seconds));
   const heat = (32 - temp) / 100 + (occupied ? 0.005 : 0);
-  const level = coolingLevel(temp, ac, occupied);
+  const level = coolingLevel(temp, ac, occupied, target);
   return {
-    temp:Math.min(40, Math.max(18, temp + dt * (heat - MAX_COOLING * level))),
+    temp:Math.min(40, Math.max(16, temp + dt * (heat - MAX_COOLING * level))),
     humidity:Math.min(80, Math.max(30, humidity + dt * (60 - 15 * level - humidity) / 120)),
     coolingPercent:Math.round(level * 100)
   };
 }
-function tick(e, now, connected, ac) {
+function tick(e, now, connected, ac, target = TARGET) {
   let dt = e.lastAt === null ? 0 : Math.max(0, (now - e.lastAt) / 1000);
   e.lastAt = now;
   const ready = connected && e.supported && fresh(e.reportedAt, now);
@@ -80,10 +80,11 @@ function tick(e, now, connected, ac) {
     dt = 0;
   }
   if (e.wanted && e.active && !e.error && (ac === 'ON' || ac === 'OFF')) {
-    const next = physics(e.temp, e.humidity, ac, dt, e.presence === 1);
+    const previousTemp = e.temp;
+    const next = physics(e.temp, e.humidity, ac, dt, e.presence === 1, target);
     e.temp = next.temp; e.humidity = next.humidity;
     e.coolingPercent = next.coolingPercent;
-    e.direction = ac === 'ON' ? (Math.abs(e.temp - TARGET) <= 0.2 ? 'holding' : 'cooling') : 'warming';
+    e.direction = ac === 'ON' && Math.abs(e.temp - target) <= 0.2 ? 'holding' : e.temp < previousTemp ? 'cooling' : 'warming';
   } else { e.direction = e.wanted ? 'waiting' : 'paused'; e.coolingPercent = null; }
   if (e.pending) {
     if (now - e.pending.sentAt < RETRY_MS) return null;
@@ -104,14 +105,14 @@ function tick(e, now, connected, ac) {
   e.lastSentAt = now;
   return payload;
 }
-function snapshot(e, now, connected) {
+function snapshot(e, now, connected, target = TARGET) {
   const ready = e.supported && fresh(e.reportedAt, now) && connected;
   return { supported:e.supported, available:ready,
     active:e.active, requested:e.wanted, presence:e.presence, direction:e.direction,
     pending:!!e.pending, error:e.error,
     retryIn:e.error && e.retryAt != null ? Math.max(0,Math.ceil((e.retryAt-now)/1000)) : null,
     phase:!ready && (e.wanted || e.active)?'paused':e.error?'error':e.wanted?(e.active?'running':'starting'):e.active?'stopping':'off',
-    targetTemp:TARGET, coolingPercent:e.direction === 'paused' || e.error ? null : e.coolingPercent,
+    targetTemp:target, coolingPercent:e.direction === 'paused' || e.error ? null : e.coolingPercent,
     initialTemp:30, outsideTemp:32, model:'accelerated-inverter-v2' };
 }
 module.exports = {initialState,start,stop,retry,acknowledge,physics,coolingLevel,tick,snapshot,TARGET,RETRY_MS,RECOVERY_MS};
