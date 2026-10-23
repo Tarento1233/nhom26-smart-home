@@ -2,7 +2,7 @@
 from playwright.sync_api import sync_playwright, expect
 
 
-def verify_dashboard(url, state, wait_for, control, data_dir, check, device_connection, environment_delivery):
+def verify_dashboard(url, state, wait_for, control, data_dir, check, device_connection, environment_delivery, login_credentials):
     control('clock', 'day')
     control('mode', 'AUTO')
     with sync_playwright() as playwright:
@@ -11,11 +11,26 @@ def verify_dashboard(url, state, wait_for, control, data_dir, check, device_conn
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(url + '/dashboard/room', wait_until='networkidle')
+        if page.url.endswith('/login'):
+            page.screenshot(path=str(data_dir / 'login-test-desktop.png'),full_page=True)
+            page.get_by_label('Tên đăng nhập',exact=True).fill(login_credentials['username'])
+            page.get_by_label('Mật khẩu',exact=True).fill(login_credentials['password'])
+            page.get_by_role('button',name='Vào căn phòng',exact=True).click()
+            page.wait_for_url('**/dashboard/room')
         page.get_by_role('heading', name='Đèn sáng. Phòng mát. Thật dễ.').wait_for()
         page.get_by_text('Phòng đã kết nối', exact=True).wait_for()
         assert page.locator('.iot-demo').get_attribute('open') is None
         assert page.locator('.iot-history-group').first.is_hidden()
         check('First view explains the purpose and keeps technical settings collapsed')
+        page.locator('.iot-demo summary').click()
+        page.get_by_role('button',name='Xem lịch sử',exact=True).click()
+        expect(page.locator('.iot-history-table tbody tr').first).to_be_visible()
+        page.get_by_label('Loại hoạt động',exact=True).select_option('sensor:temp_humid')
+        page.get_by_role('button',name='Xem lịch sử',exact=True).click()
+        expect(page.locator('.iot-history-table tbody tr').first).to_contain_text('Nhiệt độ / độ ẩm')
+        page.screenshot(path=str(data_dir/'database-history-desktop.png'),full_page=True)
+        page.locator('.iot-demo summary').click()
+        check('Dashboard queries and filters real SQLite history')
         light = page.locator('.iot-device').first
         light.get_by_role('button', name='Tắt đèn phòng', exact=True).click()
         wait_for(lambda s: s['mode'] == 'MANUAL' and s['light'] == 'OFF', 'browser light OFF and MQTT acknowledgement')
@@ -112,19 +127,14 @@ def verify_dashboard(url, state, wait_for, control, data_dir, check, device_conn
         device_connection(True)
         wait_for(lambda s: s['status'] == 'online', 'device reconnected')
 
-        # Bind the real voice page to this run's isolated MQTT prefix in the
-        # browser response only, so browser controls never address the real room.
-        def test_voice_page(route):
-            response = route.fetch()
-            source = response.text().replace('const BASE = "nhom26/room1";', 'const BASE = ' + repr(state()['baseTopic']) + ';')
-            route.fulfill(response=response, body=source)
-        page.route('**/voice/voice.html', test_voice_page)
+        # The protected config endpoint supplies this run's isolated MQTT prefix.
         control('environment', True)
         wait_for(lambda s: s['environment']['active'], 'prepare isolated empty room for voice page')
         control('occupancy', 0)
         wait_for(lambda s: s['motion']==0 and s['light']=='OFF', 'empty room for voice controls')
         page.goto(url + '/voice/voice.html', wait_until='networkidle')
         page.get_by_role('heading', name='Nói một câu, nhà làm ngay.').wait_for()
+        assert page.evaluate('BASE')==state()['baseTopic'], 'Voice must use isolated MQTT prefix'
         expect(page.locator('#roomPill')).to_have_text('Phòng đã kết nối', timeout=20000)
         page.get_by_role('button', name='Bật đèn', exact=True).click()
         wait_for(lambda s: s['mode']=='MANUAL' and s['light']=='ON' and s['motion']==0, 'voice page sends light ON while away')
@@ -170,4 +180,9 @@ def verify_dashboard(url, state, wait_for, control, data_dir, check, device_conn
         check('Stop remains usable while the simulator has not acknowledged the start')
         assert not errors, errors
         check('Desktop and mobile dashboard render without script errors or horizontal overflow')
+        page.get_by_role('button',name='Đăng xuất',exact=True).click()
+        page.wait_for_url('**/login')
+        page.goto(url+'/dashboard/room')
+        expect(page.get_by_role('button',name='Vào căn phòng',exact=True)).to_be_visible()
+        check('Browser logout closes access to the dashboard')
         browser.close()

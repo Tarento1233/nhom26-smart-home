@@ -31,6 +31,11 @@ URL = f"http://127.0.0.1:{PORT}"
 CHECKS = []
 process = None
 client = None
+operator = None
+SECURITY = DATA / ("test-security-" + BASE.split("/")[-1] + ".json")
+DB_FILE = DATA / ("test-database-" + BASE.split("/")[-1] + ".sqlite")
+MQTT_PORT = 1885
+WS_PORT = 1886
 server_log = None
 stopping = threading.Event()
 lock = threading.Lock()
@@ -45,7 +50,10 @@ environment_commands_enabled = True
 
 def request(path, body=None):
     data = None if body is None else json.dumps(body).encode()
-    req = Request(URL + path, data=data, headers={"Content-Type": "application/json"})
+    headers={"Content-Type":"application/json"}
+    if SECURITY.exists():
+        headers["Authorization"]="Bearer "+json.loads(SECURITY.read_text())["serviceToken"]
+    req = Request(URL + path, data=data, headers=headers)
     with urlopen(req, timeout=5) as response:
         content = response.read().decode("utf-8-sig")
         return json.loads(content) if "json" in response.headers.get("Content-Type", "") else content
@@ -82,14 +90,14 @@ def check(description, condition=True):
 def start_server():
     global process, server_log
     env = os.environ.copy()
-    env.update(IOT_MQTT_BASE=BASE, IOT_LOG_FILE=str(DATA / "test-e2e.csv"), PORT=str(PORT),
-               IOT_PREFERENCES_DIR=str(DATA / ('test-preferences-' + BASE.split('/')[-1])))
+    env.update(IOT_MQTT_BASE=BASE, IOT_LOG_FILE=str(DATA / (BASE.split('/')[-1]+'.csv')), PORT=str(PORT),
+               IOT_PREFERENCES_DIR=str(DATA / ('test-preferences-' + BASE.split('/')[-1])),
+               IOT_SECURITY_FILE=str(SECURITY),IOT_DB_FILE=str(DB_FILE),IOT_MQTT_TCP_PORT=str(MQTT_PORT),IOT_MQTT_WS_PORT=str(WS_PORT),IOT_DISABLE_PROVISIONER='1')
     node = shutil.which("node")
     assert node, "Node.js is required"
     server_log = (DATA / "test-e2e-node-red.log").open("a", encoding="utf-8")
     process = subprocess.Popen(
-        [node, "--max-old-space-size=384", str(NR / "node_modules/node-red/red.js"),
-         "--userDir", str(NR), "--settings", str(NR / "settings.js"), "--port", str(PORT)],
+        [node,"--max-old-space-size=384",str(NR / "node-red-service.cjs")],
         cwd=NR, env=env, stdout=server_log, stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
@@ -98,6 +106,7 @@ def start_server():
         if process.poll() is not None:
             raise RuntimeError('Node-RED exited during startup; see test-e2e-node-red.log')
         try:
+            request('/healthz')
             runtime = request('/flows/state')
             if runtime.get('state') != 'start':
                 request('/flows/state', {'state': 'start'})
@@ -106,7 +115,7 @@ def start_server():
             time.sleep(0.5)
     result = wait_for(lambda s: s.get("baseTopic") == BASE, "Node-RED starts with isolated MQTT prefix", 70)
     assert result["baseTopic"] == BASE
-    wait_for(lambda s: s["brokerOnline"], "Node-RED connects to HiveMQ", 45)
+    wait_for(lambda s: s["brokerOnline"], "Node-RED authenticates with local MQTT", 45)
 
 
 def stop_server():
@@ -124,11 +133,18 @@ def stop_server():
 
 
 def connect_emulator():
-    global client
-    addresses = list(dict.fromkeys(item[4][0] for item in socket.getaddrinfo("broker.hivemq.com", 1883, socket.AF_INET, socket.SOCK_STREAM)))
+    global client, operator
+    config=json.loads(SECURITY.read_text())
+    device_account=next(a for a in config["accounts"] if a["role"]=="device")
+    operator_account=next(a for a in config["accounts"] if a["role"]=="operator")
+    operator=mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,client_id="n26-operator-"+uuid.uuid4().hex[:10])
+    operator.username_pw_set(operator_account["username"],operator_account["password"])
+    operator.connect("127.0.0.1",MQTT_PORT,30);operator.loop_start()
+    addresses = ["127.0.0.1"]
     for address in addresses:
         connected = threading.Event()
         c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="n26-test-" + uuid.uuid4().hex[:10])
+        c.username_pw_set(device_account["username"],device_account["password"])
         c.will_set(BASE + "/status", "offline", 1, True)
 
         def on_connect(conn, user, flags, reason, props):
@@ -159,7 +175,7 @@ def connect_emulator():
 
         c.on_connect, c.on_message = on_connect, on_message
         try:
-            c.connect(address, 1883, 30)
+            c.connect(address, MQTT_PORT, 30)
             c.loop_start()
             if connected.wait(8):
                 client = c
@@ -171,7 +187,7 @@ def connect_emulator():
             pass
         c.disconnect()
         c.loop_stop()
-    raise RuntimeError("No HiveMQ endpoint returned a CONNACK")
+    raise RuntimeError("Local authenticated broker did not return a CONNACK")
 
 
 def heartbeat():
@@ -212,7 +228,9 @@ def environment_delivery(enabled):
 try:
     print("Starting isolated Node-RED E2E run:", BASE, flush=True)
     start_server()
-    check("Actual Node-RED starts and connects to the broker")
+    from security_e2e import verify_security, verify_database
+    saved_cookie=verify_security(URL,json.loads(SECURITY.read_text()),check)
+    check("Actual Node-RED starts and authenticates with its private broker")
     connect_emulator()
     threading.Thread(target=heartbeat, daemon=True).start()
     wait_for(lambda s: s["status"] == "online", "fresh sensor heartbeat")
@@ -241,7 +259,7 @@ try:
     sensors(temp=29)
     wait_for(lambda s: s["ac"] == "ON", "AC turns on again")
 
-    client.publish(BASE + "/controller/actuator/light/cmd", '{"cmd":"OFF","source":"voice"}', qos=1)
+    operator.publish(BASE + "/controller/actuator/light/cmd", '{"cmd":"OFF","source":"voice"}', qos=1)
     wait_for(lambda s: s["mode"] == "MANUAL" and s["light"] == "OFF", "voice command is prioritised")
     time.sleep(3)
     check("Voice/HA request enters MANUAL and is not overwritten", state()["light"] == "OFF")
@@ -278,7 +296,7 @@ try:
     control('autoTemperature', 28)
     control('manualTemperature', 20)
     wait_for(lambda s: s['mode']=='SLEEP' and s['acTarget']==28 and s['acSettings']['manual']==20, 'save independent targets without changing SLEEP')
-    client.publish(BASE + '/controller/temperature/cmd', json.dumps({'profile':'manual','temperature':21,'source':'voice'}), qos=1).wait_for_publish()
+    operator.publish(BASE + '/controller/temperature/cmd', json.dumps({'profile':'manual','temperature':21,'source':'voice'}), qos=1).wait_for_publish()
     wait_for(lambda s: s['acSettings']['manual']==21 and s['mode']=='SLEEP', 'voice target MQTT request')
     check('HTTP and MQTT temperature requests save independent profiles without changing mode')
     try:
@@ -312,17 +330,18 @@ try:
         heartbeat_enabled = True
     wait_for(lambda s: s["status"] == "online", "recover after fresh heartbeat")
     check("Controller recovers when fresh telemetry resumes")
+    verify_database(URL,request,saved_cookie,check)
 
     download = request("/api/log.csv")
     rows = list(csv.DictReader(io.StringIO(download)))
     assert rows and {"timestamp", "event", "mode", "temp", "humidity", "lux", "motion", "light", "ac", "detail"}.issubset(rows[0])
     check("CSV log records sensors, mode changes and control commands", any(r["event"].startswith("command:") for r in rows) and any(r["mode"] == "SLEEP" for r in rows))
     history = request("/api/history")
-    check("CSV history survives controller restart and is served by API", len(history) > 5)
+    check("SQLite history survives controller restart and is served by API", len(history) > 5)
     check("Dashboard and integrated voice page are served", 'app' in request('/dashboard/room') and 'rec.continuous = true' in request('/voice/voice.html'))
     if '--browser' in sys.argv:
         from dashboard_browser import verify_dashboard
-        verify_dashboard(URL, state, wait_for, control, DATA, check, device_connection, environment_delivery)
+        verify_dashboard(URL, state, wait_for, control, DATA, check, device_connection, environment_delivery, json.loads(SECURITY.read_text())["web"])
     report = {"baseTopic": BASE, "productionTopicUsed": False, "checks": CHECKS, "passed": len(CHECKS), "csvRows": len(rows)}
     (DATA / "test-e2e-result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print("E2E PASS:", len(CHECKS), "checks;", len(rows), "CSV rows", flush=True)
@@ -330,7 +349,9 @@ finally:
     stopping.set()
     stop_server()
     if client:
-        for suffix in ["status", "sensor/temp_humid", "sensor/light", "sensor/motion", "actuator/light/state", "actuator/ac/state", "controller/status", "controller/mode", "controller/state", "environment/state"]:
-            client.publish(BASE + "/" + suffix, "", qos=1, retain=True).wait_for_publish(timeout=3)
         client.disconnect()
         client.loop_stop()
+
+    if operator:
+        operator.disconnect()
+        operator.loop_stop()

@@ -7,16 +7,22 @@ Yêu cầu: pip install paho-mqtt
 import json
 import sys
 import time
+from pathlib import Path
+import os
 
 import paho.mqtt.client as mqtt
 
-GROUP = "nhom26"  # phải trùng GROUP trong sketch.ino
-BROKER = "broker.hivemq.com"
-# Home Assistant phải đặt "Discovery prefix" = giá trị này, không dùng "homeassistant"
-# vì broker công khai có hàng trăm thiết bị lạ khai báo sẵn dưới prefix mặc định.
+SECURITY=Path(os.environ.get('IOT_SECURITY_FILE',Path(__file__).resolve().parents[1]/'node_red/data/security.json'))
+if not SECURITY.exists():
+    raise SystemExit('Chạy khoi_dong_node_red.bat trước để tạo tài khoản MQTT trên máy này.')
+SETTINGS=json.loads(SECURITY.read_text(encoding='utf-8-sig'))
+ACCOUNT=next(a for a in SETTINGS['accounts'] if a['role']=='integration')
+BASE=SETTINGS['baseTopic']
+GROUP=BASE.split('/')[0]
+BROKER = "127.0.0.1"
+# Home Assistant phải đặt Discovery prefix trùng giá trị này.
 DISCOVERY_PREFIX = f"{GROUP}/ha"
 
-BASE = f"{GROUP}/room1"
 AVAIL = {
     "availability_topic": f"{BASE}/status",
     "payload_available": "online",
@@ -84,7 +90,8 @@ ENTITIES = [
 def main():
     remove = "--remove" in sys.argv
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    client.connect(BROKER, 1883, 30)
+    client.username_pw_set(ACCOUNT['username'],ACCOUNT['password'])
+    client.connect(BROKER, SETTINGS['mqtt']['port'], 30)
     client.loop_start()
     for component, object_id, config in ENTITIES:
         topic = f"{DISCOVERY_PREFIX}/{component}/{object_id}/config"

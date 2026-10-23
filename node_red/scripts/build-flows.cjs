@@ -13,10 +13,10 @@ const linkOut = (id, z, name, x, y, links) => add({id,type:'link out',z,name,mod
 const linkIn = (id, z, name, x, y, links, wire) => add({id,type:'link in',z,name,links,x,y,wires:[[wire]]});
 const comment = (id,z,name,info,x,y) => add({id,type:'comment',z,name,info,x,y,wires:[]});
 
-add({id:MAIN,type:'tab',label:'01 · MQTT & tự động',disabled:false,info:'Nhận cảm biến → kiểm tra độ mới → AUTO/MANUAL/SLEEP → lệnh relay. Rule được nhúng sẵn; import flow không cần thư viện JavaScript riêng.'});
+add({id:MAIN,type:'tab',label:'01 · MQTT & tự động',disabled:false,info:'Nhận cảm biến → kiểm tra độ mới → AUTO/MANUAL/SLEEP → lệnh relay. Rule được nhúng sẵn; khởi chạy bằng node-red-service.cjs để có SQLite và xác thực.'});
 add({id:UI,type:'tab',label:'02 · Dashboard',disabled:false,info:'Dashboard 2.0: trạng thái thật từ ESP32, điều khiển, chế độ, công cụ demo và biểu đồ.'});
-add({id:API,type:'tab',label:'03 · API & log CSV',disabled:false,info:'API chỉ lắng nghe localhost. Ghi log CSV liên tục và khôi phục biểu đồ từ log khi khởi động.'});
-add({id:BROKER,type:'mqtt-broker',name:'HiveMQ · nhóm 26',broker:'${IOT_MQTT_HOST}',port:'${IOT_MQTT_PORT}',
+add({id:API,type:'tab',label:'03 · API & SQLite',disabled:false,info:'API cần đăng nhập. SQLite lưu telemetry và xác thực; khôi phục lịch sử/biểu đồ, xuất CSV từ database.'});
+add({id:BROKER,type:'mqtt-broker',name:'MQTT riêng · xác thực và phân quyền',broker:'${IOT_MQTT_HOST}',port:'${IOT_MQTT_PORT}',
   clientid:'',autoConnect:true,usetls:false,verifyservercert:true,protocolVersion:'4',keepalive:'30',cleansession:true,autoUnsubscribe:true,
   birthTopic:'${IOT_TOPIC_CONTROLLER_STATUS}',birthQos:'1',birthRetain:'true',birthPayload:'online',birthMsg:{},
   closeTopic:'${IOT_TOPIC_CONTROLLER_STATUS}',closeQos:'1',closeRetain:'true',closePayload:'offline',closeMsg:{},
@@ -42,6 +42,12 @@ const savedSettings = context.get('acSettings', 'preferences');
 const state = context.get('room') || controller.initialState(env.get('IOT_MQTT_BASE') || 'nhom26/room1', savedSettings);
 const result = controller.step(state, msg, Date.now());
 if (!result) return null;
+const database = global.get('iotDatabase');
+if (!database) throw new Error('SQLite chưa sẵn sàng');
+database.append(result.records);
+result.view.payload.storage = database.summary();
+result.view.payload.security = {broker:'local',authenticated:true};
+for (const publication of result.mqtt) if (publication.topic.endsWith('/controller/state')) publication.payload=JSON.stringify(result.view.payload);
 context.set('room', result.state);
 if (JSON.stringify(savedSettings) !== JSON.stringify(result.state.acSettings)) context.set('acSettings', result.state.acSettings, 'preferences');
 const view = result.view.payload;
@@ -84,7 +90,7 @@ for (const [id,group,label,y,color] of [['n26-temp-chart','n26-temp-group','Nhi�
     colors:[color],textColorDefault:true,gridColorDefault:true,width:6,height:5,className:'',interpolation:'linear',x:410,y,wires:[[]]});
 }
 
-comment('n26-api-note',API,'API localhost · ghi CSV · khôi phục lịch sử','GET /api/status; POST /api/control; GET /api/log.csv; GET /api/history. CSV giữ qua lần khởi động; chi tiết nhiệt độ ghi nguồn model/wokwi. Node-RED chỉ lắng nghe 127.0.0.1.',530,40);
+comment('n26-api-note',API,'API đăng nhập · truy vấn SQLite · xuất CSV','GET /api/status; POST /api/control; GET /api/log.csv; GET /api/history. SQLite lưu cảm biến, lệnh, xác thực và phiên đăng nhập. CSV cũ được nhập một lần; xuất CSV đọc từ database. Node-RED chỉ lắng nghe 127.0.0.1.',530,40);
 add({id:'n26-http-status',type:'http in',z:API,name:'GET /api/status',url:'/api/status',method:'get',upload:false,swaggerDoc:'',x:150,y:110,wires:[['n26-status-request']]});
 fn('n26-status-request',API,'Lấy snapshot mới',"msg.topic='_tick'; return msg;",390,110,[['n26-api-out']]);
 add({id:'n26-http-control',type:'http in',z:API,name:'POST /api/control',url:'/api/control',method:'post',upload:false,swaggerDoc:'',x:150,y:175,wires:[['n26-validate-request']]});
@@ -101,21 +107,20 @@ linkIn('n26-log-in',API,'Sự kiện CSV',115,300,['n26-log-out'],'n26-log-file-
 fn('n26-log-file-name',API,'Đường dẫn log',"msg.filename=env.get('IOT_LOG_FILE'); return msg;",330,300,[['n26-write-log']]);
 add({id:'n26-write-log',type:'file',z:API,name:'Append telemetry.csv',filename:'filename',filenameType:'msg',appendNewline:false,createDir:true,overwriteFile:'false',encoding:'utf8',x:600,y:300,wires:[[]]});
 add({id:'n26-download',type:'http in',z:API,name:'GET /api/log.csv',url:'/api/log.csv',method:'get',upload:false,swaggerDoc:'',x:150,y:380,wires:[['n26-download-path']]});
-fn('n26-download-path',API,'File CSV',"msg.filename=env.get('IOT_LOG_FILE');return msg;",380,380,[['n26-read-download']]);
-add({id:'n26-read-download',type:'file in',z:API,name:'Đọc CSV để tải',filename:'filename',filenameType:'msg',format:'utf8',chunk:false,sendError:false,encoding:'none',allProps:false,x:600,y:380,wires:[['n26-download-headers']]});
-fn('n26-download-headers',API,'CSV download headers',"msg.headers={'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename=nhom26-telemetry.csv'};return msg;",850,380,[['n26-http-response']]);
+fn('n26-download-path',API,'Xuất CSV từ SQLite',`msg.payload=global.get('iotDatabase').exportCsv();
+msg.headers={'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename=nhom26-telemetry.csv','Cache-Control':'no-store'};
+return msg;`,480,380,[['n26-http-response']]);
 
-add({id:'n26-history-start',type:'inject',z:API,name:'Khôi phục biểu đồ khi mở',props:[],repeat:'',crontab:'',once:true,onceDelay:3,x:170,y:490,wires:[['n26-history-path']]});
+add({id:'n26-history-start',type:'inject',z:API,name:'Khôi phục biểu đồ từ database',props:[],repeat:'',crontab:'',once:true,onceDelay:3,x:170,y:490,wires:[['n26-history-path']]});
 add({id:'n26-history-api',type:'http in',z:API,name:'GET /api/history',url:'/api/history',method:'get',upload:false,swaggerDoc:'',x:150,y:550,wires:[['n26-history-path']]});
-fn('n26-history-path',API,'Đọc lịch sử CSV',"msg.filename=env.get('IOT_LOG_FILE');return msg;",410,510,[['n26-read-history']]);
-add({id:'n26-read-history',type:'file in',z:API,name:'Đọc log đã lưu',filename:'filename',filenameType:'msg',format:'utf8',chunk:false,sendError:false,encoding:'none',allProps:false,x:640,y:510,wires:[['n26-strip-bom']]});
-fn('n26-strip-bom',API,'Bỏ BOM UTF-8',"msg.payload=String(msg.payload).replace(/^\\uFEFF/,'');return msg;",860,510,[['n26-parse-csv']]);
-add({id:'n26-parse-csv',type:'csv',z:API,name:'CSV → bản ghi',spec:'rfc',sep:',',hdrin:true,hdrout:'none',multi:'mult',ret:'\\n',temp:'',skip:'0',strings:true,include_empty_strings:true,include_null_values:false,x:1070,y:510,wires:[['n26-history-points']]});
-fn('n26-history-points',API,'Lịch sử 24 giờ',`const rows=(Array.isArray(msg.payload)?msg.payload:[]).filter(r=>r.timestamp);
-if(msg.req){msg.payload=rows.slice(-200);msg.headers={'Content-Type':'application/json; charset=utf-8'};return [null,null,msg];}
-const since=Date.now()-86400000;
-const points=(event,key,name)=>rows.filter(r=>r.event===event&&Date.parse(r.timestamp)>=since&&r[key]!==''&&Number.isFinite(Number(r[key]))).slice(-500).map(r=>({topic:name,payload:Number(r[key]),timestamp:Date.parse(r.timestamp)}));
-return [points('sensor:temp_humid','temp','Nhiệt độ'),points('sensor:light','lux','Ánh sáng'),null];`,810,610,[['n26-history-temp'],['n26-history-lux'],['n26-http-response']]);
+fn('n26-history-path',API,'Truy vấn SQLite',`const database=global.get('iotDatabase');
+if(msg.req){
+ try{msg.payload=database.history(msg.req.query||{});msg.statusCode=200;}
+ catch(error){msg.payload={error:error.message};msg.statusCode=400;}
+ msg.headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};return [null,null,msg];
+}
+const points=(event,key,name)=>database.chart(event,key).map(r=>({topic:name,payload:r.value,timestamp:Date.parse(r.timestamp)}));
+return [points('sensor:temp_humid','temp','Nhiệt độ'),points('sensor:light','lux','Ánh sáng'),null];`,610,510,[['n26-history-temp'],['n26-history-lux'],['n26-http-response']]);
 linkOut('n26-history-temp',API,'Lịch sử nhiệt độ',1065,590,['n26-temp-in']);
 linkOut('n26-history-lux',API,'Lịch sử ánh sáng',1065,645,['n26-lux-in']);
 add({id:'n26-catch',type:'catch',z:API,name:'Lỗi file / flow',scope:null,uncaught:false,x:170,y:700,wires:[['n26-system-error']]});

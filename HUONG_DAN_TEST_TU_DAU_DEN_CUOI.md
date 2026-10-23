@@ -1,7 +1,7 @@
 # Test từ đầu đến cuối — Nhà thông minh nhóm 26
 
 Bản hướng dẫn ngày 19/10/2026. Làm lần lượt; đối chiếu kết quả ở từng bước.
-Hệ thống cần Internet để kết nối HiveMQ và nhận dạng giọng nói.
+Wokwi và nhận dạng giọng nói cần Internet. MQTT chạy bằng broker riêng có xác thực trên máy.
 
 **Thử một lượt bằng bản mới:** xem [Test nhanh 5 phút](TEST_NHANH_5_PHUT.md).
 Bài đó dùng Phòng tự động, không cần chỉnh từng cảm biến Wokwi.

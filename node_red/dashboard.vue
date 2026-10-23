@@ -2,7 +2,7 @@
   <main class="iot-room" v-if="room">
     <header class="iot-top">
       <a class="iot-brand" href="/dashboard/room" aria-label="Nhà thông minh, trang chính"><span class="iot-brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg></span><span>Nhà thông minh<small>NHÓM 26 · PHÒNG 1</small></span></a>
-      <div class="iot-top-right"><span class="iot-status" :class="online ? 'good' : 'waiting'"><i></i>{{ connectionLabel }}</span><a class="iot-help-link" href="#iot-help" @click="helpOpen = true">Cách dùng ↗</a></div>
+      <div class="iot-top-right"><span class="iot-status" :class="online ? 'good' : 'waiting'"><i></i>{{ connectionLabel }}</span><a class="iot-help-link" href="#iot-help" @click="helpOpen = true">Cách dùng ↗</a><form action="/logout" method="post"><button class="iot-text-button iot-logout">Đăng xuất</button></form></div>
     </header>
     <div class="iot-heading"><div><span class="iot-eyebrow">MỘT CHẠM, NHÀ TỰ CHĂM</span><h1>Đèn sáng. Phòng mát. Thật dễ.</h1><p>Bật tắt đèn, máy lạnh hoặc để căn phòng tự làm giúp bạn.</p></div><span class="iot-project-tag">BẢN MÔ PHỎNG</span></div>
 
@@ -69,6 +69,11 @@
       <div class="iot-demo-setting"><div><h3>Thử vào ban ngày hoặc ban đêm</h3><p>23:00–06:00 là giờ ngủ. Chọn “Tự động” để áp dụng lịch sau khi đổi giờ.</p></div><div class="iot-segment" role="group" aria-label="Giờ thử nghiệm"><button v-for="clock in clocks" :key="clock.value" :class="{selected:room.clock === clock.value}" :aria-pressed="room.clock === clock.value" @click="act('clock',clock.value)">{{ clock.label }}</button></div></div>
       <div class="iot-metrics"><article :class="{stale:!room.tempFresh || !online}"><span>Độ ẩm</span><strong>{{ number(room.humidity,0) }}<small>%</small></strong><p>Lượng hơi nước trong không khí</p></article><article :class="{stale:!room.luxFresh || !online}"><span>Độ sáng</span><strong>{{ number(room.lux,0) }}<small>lux</small></strong><p>{{ room.lux == null ? 'Chờ cảm biến ánh sáng' : room.lux < 300 ? 'Phòng đang tối' : 'Phòng đủ sáng' }} · đèn bật theo người</p></article></div>
       <div class="iot-last-action"><span>Hoạt động mới nhất</span><p>{{ room.lastAction }}</p><small>Trạng thái đèn và máy lạnh chỉ cập nhật khi thiết bị phản hồi.</small></div><a class="iot-download" href="/api/log.csv" download>Tải lịch sử hoạt động (.csv) <span aria-hidden="true">↓</span></a>
+      <section class="iot-storage" aria-labelledby="iot-storage-title"><h3 id="iot-storage-title">Lịch sử đã lưu</h3><p>{{ room.storage?.records?.toLocaleString('vi-VN') || 0 }} bản ghi trong SQLite · dữ liệu còn sau khi khởi động lại.</p>
+        <form class="iot-history-filter" @submit.prevent="loadHistory"><label>Loại hoạt động<select v-model="historyEvent" aria-label="Loại hoạt động"><option value="">Tất cả</option><option value="sensor:temp_humid">Nhiệt độ và độ ẩm</option><option value="sensor:motion">Có người / vắng</option><option value="command:light">Lệnh đèn</option><option value="command:ac">Lệnh máy lạnh</option></select></label><label>Từ thời điểm<input type="datetime-local" v-model="historyFrom"></label><button type="submit" class="iot-demo-toggle" :disabled="historyBusy">{{ historyBusy ? 'Đang tải…' : 'Xem lịch sử' }}</button></form>
+        <p v-if="historyError" role="alert">{{ historyError }}</p><p v-if="historyLoaded" class="iot-history-note" role="status">{{ historyRows.length ? 'Tối đa 20 bản ghi gần nhất theo bộ lọc.' : 'Chưa có hoạt động khớp bộ lọc.' }}</p>
+        <div v-if="historyRows.length" class="iot-history-table" tabindex="0" aria-label="Bảng lịch sử hoạt động"><table><thead><tr><th>Thời gian</th><th>Hoạt động</th><th>Chế độ</th><th>Nhiệt độ</th><th>Đèn</th><th>Máy lạnh</th></tr></thead><tbody><tr v-for="row in historyRows" :key="row.id"><td>{{ new Date(row.timestamp).toLocaleString('vi-VN') }}</td><td>{{ eventLabel(row.event) }}</td><td>{{ row.mode }}</td><td>{{ row.temp == null ? '—' : number(row.temp,1) + '°C' }}</td><td>{{ row.light === 'ON' ? 'Bật' : row.light === 'OFF' ? 'Tắt' : '—' }}</td><td>{{ row.ac === 'ON' ? 'Bật' : row.ac === 'OFF' ? 'Tắt' : '—' }}</td></tr></tbody></table></div>
+      </section>
     </div></details>
     <footer class="iot-footer"><span>Nhà thông minh · Nhóm 26</span><span>{{ environment.active ? 'Đang dùng phòng mô phỏng' : 'Đang dùng cảm biến Wokwi' }} · {{ room.demo ? 'Thời gian chờ rút ngắn' : 'Thời gian chờ bình thường' }}</span></footer>
   </main>
@@ -77,7 +82,7 @@
 
 <script>
 export default {
-  data() { return { helpOpen:false, clocks:[{value:'real',label:'Giờ thật'},{value:'day',label:'14:00'},{value:'night',label:'23:00'}], modes:[{value:'AUTO',label:'Tự động',hint:'Nhà tự bật tắt giúp bạn'},{value:'MANUAL',label:'Tự điều khiển',hint:'Bạn chọn bật hoặc tắt'},{value:'SLEEP',label:'Giờ ngủ',hint:'Dùng mức của Tự động'}] }; },
+  data() { return { helpOpen:false, historyRows:[], historyEvent:'', historyFrom:'', historyBusy:false, historyLoaded:false, historyError:'', clocks:[{value:'real',label:'Giờ thật'},{value:'day',label:'14:00'},{value:'night',label:'23:00'}], modes:[{value:'AUTO',label:'Tự động',hint:'Nhà tự bật tắt giúp bạn'},{value:'MANUAL',label:'Tự điều khiển',hint:'Bạn chọn bật hoặc tắt'},{value:'SLEEP',label:'Giờ ngủ',hint:'Dùng mức của Tự động'}] }; },
   computed: {
     room() { return this.msg?.payload || null; },
     online() { return this.room.status === 'online'; },
@@ -87,7 +92,7 @@ export default {
     otherTarget() { return this.room.acSettings?.[this.manualMode ? 'auto' : 'manual'] ?? 25; },
     environmentBusy() { return ['starting','stopping'].includes(this.environment.phase); },
     connectionLabel() { return this.online ? 'Phòng đã kết nối' : this.room.status === 'stale' ? 'Phòng mất tín hiệu' : 'Phòng chưa kết nối'; },
-    connectionHelp() { return this.room.status === 'broker_offline' ? 'Kiểm tra Internet và giữ mô phỏng Wokwi đang chạy. Trang sẽ tự kết nối lại.' : 'Mở mô phỏng Wokwi trong VS Code và bấm chạy. Các nút điều khiển sẽ sẵn sàng khi phòng kết nối.'; },
+    connectionHelp() { return this.room.status === 'broker_offline' ? 'Giữ dịch vụ Node-RED và mô phỏng Wokwi đang chạy. Trang sẽ tự kết nối lại.' : 'Mở mô phỏng Wokwi trong VS Code và bấm chạy. Các nút điều khiển sẽ sẵn sàng khi phòng kết nối.'; },
     friendlyAlerts() { return (this.room.alerts || []).filter(a => !/broker MQTT|ESP32 đang offline|Chưa có dữ liệu ESP32 mới/.test(a)).map(a => a.replace('Dữ liệu DHT22 đã cũ; tạm dừng rule máy lạnh','Nhiệt độ chưa cập nhật. Máy lạnh tạm dừng tự động; hãy kiểm tra Wokwi.').replace('Dữ liệu PIR đã cũ; tạm dừng rule tự động','Chưa nhận được chuyển động mới. Hãy kiểm tra cảm biến trong Wokwi.')); },
     experienceLabel() { return this.environment.phase === 'running' ? 'Đang trải nghiệm' : this.environment.phase === 'error' ? 'Đang chờ phản hồi' : this.environment.phase === 'paused' ? 'Đang tạm dừng' : 'Đang chuẩn bị'; },
     experienceHeading() { const phase=this.environment.phase; return phase === 'error' ? 'Phòng chưa nhận được yêu cầu' : phase === 'paused' ? 'Trải nghiệm đang tạm dừng' : phase === 'starting' ? 'Đang kết nối trải nghiệm…' : phase === 'stopping' ? 'Đang dừng trải nghiệm…' : phase === 'running' ? 'Nhìn xem, nhà đang tự chăm!' : 'Thử một căn phòng biết tự chăm'; },
@@ -112,6 +117,20 @@ export default {
     ]; }
   },
   methods: {
+    async loadHistory() {
+      this.historyBusy=true;this.historyError='';
+      try {
+        const query=new URLSearchParams({limit:'20'});
+        if(this.historyEvent)query.set('event',this.historyEvent);
+        if(this.historyFrom)query.set('from',new Date(this.historyFrom).toISOString());
+        const response=await fetch('/api/history?'+query);
+        if(response.status===401){location.assign('/login');return;}
+        if(!response.ok)throw new Error('Không tải được lịch sử. Thử lại nhé.');
+        this.historyRows=await response.json();this.historyLoaded=true;
+      } catch(error) {this.historyError=error.message;}
+      finally {this.historyBusy=false;}
+    },
+    eventLabel(event) {return ({'sensor:temp_humid':'Nhiệt độ / độ ẩm','sensor:motion':'Có người / vắng','sensor:light':'Độ sáng','command:light':'Lệnh đèn','command:ac':'Lệnh máy lạnh','mode':'Đổi chế độ'})[event] || event;},
     act(kind,value) { this.send({topic:'ui/' + kind,payload:value}); },
     setTemperature(value) { this.act(this.manualMode ? 'manualTemperature' : 'autoTemperature', value); },
     showHelp() { this.helpOpen = true; this.$nextTick(() => this.$refs.help.scrollIntoView({behavior:'smooth',block:'start'})); },
@@ -136,4 +155,6 @@ export default {
 @media(max-width:1000px){.iot-room{padding:6px 12px 0}.iot-overview{grid-template-columns:1.1fr 1fr;gap:14px}.iot-experience{padding:22px 20px 14px}.iot-experience h2{font-size:23px}.iot-room-view{padding:20px 18px}.iot-mode-row{flex-direction:column;align-items:stretch;gap:17px}.iot-mode-intro{max-width:none}.iot-mode-options{max-width:none}.iot-running{font-size:9px}.iot-section-heading>p{max-width:210px;text-align:right}}
 @media(max-width:700px){.iot-room{padding:5px 8px 0}.iot-top{padding-bottom:17px}.iot-brand{font-size:14px;gap:8px}.iot-brand small{font-size:8px}.iot-brand-icon{width:37px;height:37px;border-radius:11px}.iot-top-right{gap:10px}.iot-help-link{display:none}.iot-status{font-size:10px;gap:5px}.iot-heading{padding:24px 0 22px}.iot-heading h1{font-size:29px;max-width:330px}.iot-heading p{font-size:13px;max-width:330px;margin-top:9px}.iot-project-tag{display:none}.iot-overview{grid-template-columns:1fr;gap:14px}.iot-experience{padding:22px 22px 15px}.iot-experience h2{font-size:26px;max-width:340px}.iot-room .iot-experience-copy{max-width:none;font-size:14px}.iot-start{width:100%}.iot-start-note{text-align:center}.iot-room-view{padding:19px 22px}.iot-room-scene{max-width:310px}.iot-room-readings strong{font-size:34px}.iot-room-summary{max-width:165px}.iot-section-heading{align-items:flex-start;flex-direction:column;gap:6px}.iot-section-heading>p{max-width:none;text-align:left;font-size:12px}.iot-section-heading h2{font-size:23px}.iot-devices{gap:12px;grid-template-columns:1fr}.iot-device{padding:20px 22px}.iot-room .iot-device-description{min-height:0}.iot-actions button{min-height:48px;font-size:13px}.iot-manual-hint{font-size:11px!important;position:relative;padding-left:21px}.iot-manual-hint svg{position:absolute;left:0;top:3px}.iot-manual-hint .iot-text-button{margin-left:0}.iot-mode-row{padding:20px}.iot-mode-options{flex-direction:column;gap:8px}.iot-mode-options button{padding:12px 14px;align-items:center;gap:12px}.iot-mode-options button>span:last-child{display:flex;flex:1;align-items:center;justify-content:space-between;gap:10px}.iot-mode-options strong{font-size:13px;white-space:nowrap}.iot-mode-options small{margin:0;text-align:right;font-size:10px;max-width:145px}.iot-option-check{margin:0;width:17px;height:17px}.iot-voice-link{padding:17px;gap:10px}.iot-voice-link small{max-width:230px;line-height:1.6}.iot-room details summary{font-size:12px;min-height:60px}.iot-summary-extra{font-size:9px;gap:10px}.iot-demo-inner{padding:16px}.iot-demo-setting{align-items:stretch;flex-direction:column;gap:12px}.iot-demo-toggle{align-self:flex-start}.iot-segment button{flex:1}.iot-metrics{gap:9px}.iot-metrics article{padding:13px}.iot-metrics strong{font-size:25px}.iot-help-body{padding:6px 12px 18px}.iot-footer{flex-direction:column;gap:6px;font-size:9px}.iot-connect{padding:14px;gap:9px}.iot-connect h2{font-size:14px}.iot-connect p{font-size:12px}.iot-experience-footer{font-size:9px;flex-wrap:wrap}.iot-running{font-size:9px}.iot-room-readings{gap:12px}}
 @media(prefers-reduced-motion:reduce){.iot-room *{scroll-behavior:auto!important;transition:none!important}}
+.iot-storage{margin-top:22px;border-top:1px solid var(--line);padding-top:20px}.iot-storage h3{font-size:16px}.iot-storage>p{font-size:12px;margin-top:5px}.iot-history-filter{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:15px 0}.iot-history-filter label{display:grid;gap:5px;font-size:11px;color:var(--muted)}.iot-history-filter select,.iot-history-filter input{font:inherit;font-size:13px;background:#fff;color:var(--ink);border:1px solid #c5d3b8;border-radius:9px;padding:10px;min-height:44px;max-width:100%}.iot-history-table{max-width:100%;overflow:auto;margin-top:12px;background:#fff;border:1px solid var(--line);border-radius:9px}.iot-history-table table{border-collapse:collapse;width:100%;font-size:11px;white-space:nowrap}.iot-history-table th,.iot-history-table td{text-align:left;padding:10px;border-bottom:1px solid var(--line)}.iot-history-table th{background:#eaf0e2}.iot-top-right .iot-logout{min-height:36px;font-size:11px}.iot-top-right form{margin:0}
+@media(max-width:380px){.iot-top{flex-wrap:wrap;gap:10px}.iot-top-right{margin-left:auto}}
 </style>

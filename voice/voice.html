@@ -6,6 +6,7 @@
 <title>Nói để điều khiển — Nhà thông minh</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/api/mqtt-config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <style>
   :root {
@@ -145,8 +146,9 @@
 </main>
 
 <script>
-const BROKER = "wss://broker.hivemq.com:8884/mqtt";
-const BASE = "nhom26/room1";
+const CONFIG = window.IOT_MQTT_CONFIG || {};
+const BROKER = CONFIG.url || "ws://127.0.0.1:1884/mqtt";
+const BASE = CONFIG.base || "nhom26/room1";
 const T = {
   lightCmd: BASE + "/controller/actuator/light/cmd", acCmd: BASE + "/controller/actuator/ac/cmd",
   lightState: BASE + "/actuator/light/state", acState: BASE + "/actuator/ac/state",
@@ -176,11 +178,11 @@ function speak(text) {
   speechSynthesis.speak(u);
 }
 
-const client = mqtt.connect(BROKER, { clientId: "nhom26-voice-" + Math.random().toString(16).slice(2, 8), reconnectPeriod: 3000 });
+const client = mqtt.connect(BROKER, { clientId: "nhom26-voice-" + Math.random().toString(16).slice(2, 8), reconnectPeriod: 3000, username:CONFIG.username, password:CONFIG.password });
 client.on("connect", () => {
   $("mqttPill").textContent = "Broker: đã kết nối"; $("mqttPill").className = "pill on";
   client.subscribe(Object.values(T).filter(t => !t.endsWith("/cmd")));
-  log("Đã kết nối broker HiveMQ");
+  log("Đã đăng nhập broker riêng");
 });
 client.on("close", () => {
   $("mqttPill").textContent = "Broker: mất kết nối"; $("mqttPill").className = "pill off";

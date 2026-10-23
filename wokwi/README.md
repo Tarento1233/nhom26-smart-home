@@ -2,8 +2,10 @@
 
 Bản này dùng lại `sketch.ino` và `diagram.json` của đồ án: ESP32, DHT22, LDR,
 PIR, hai relay, LED vàng (đèn), LED xanh (máy lạnh), LCD I2C.
-Broker vẫn là `broker.hivemq.com:1883`, topic vẫn là `nhom26/room1/...`,
-nên dùng chung với Home Assistant, trang giọng nói và cầu nối Matter đã có.
+Broker là Aedes trên máy Windows, ESP32 truy cập qua `host.wokwi.internal:1883`.
+Chạy Node-RED trước, rồi Wokwi VS Code với private gateway. Dịch vụ cấp tài khoản
+cho ESP32 qua serial RFC2217 cổng 4000. Firmware build sẵn không chứa mật khẩu.
+Chi tiết: [Authentication và Database](../docs/XAC_THUC_VA_DATABASE.md).
 
 ## Mở và chạy
 
@@ -93,11 +95,11 @@ Dừng trải nghiệm; LDR vẫn hoạt động trong cả hai chế độ.
 | Không thấy `wokwi.toml` | Mở workspace ở bước 1, hoặc F1 → Wokwi: Select Config File → chọn file trong thư mục `wokwi` |
 | Không thấy firmware | Ctrl+Shift+B; xem lỗi trong terminal nếu chưa có Build OK |
 | Báo thiếu/hết hạn license | F1 → Wokwi: Request a new License; kiểm tra license trong tài khoản Wokwi |
-| LCD chưa có OK | Xem Serial Monitor; kiểm tra Internet, MQTT TCP 1883, và gateway của extension |
+| LCD chưa có OK | Xem Serial Monitor; chạy Node-RED trước; nếu lặp N26_PROVISION, kiểm tra cổng serial 4000 và wokwi.toml; sau đó kiểm tra private gateway |
 | Home Assistant báo Unavailable | Kiểm tra mô phỏng đang chạy và hiển thị, LCD có OK; đóng bản Wokwi web đang chạy song song |
 | Build báo thiếu thư viện | Cài đủ thư viện trong `libraries.txt` vào bộ Arduino CLI đang dùng |
 | VS Code báo `cannot open source file` nhưng build vẫn được | Ctrl+Shift+B để cập nhật cấu hình IntelliSense; nếu vẫn còn báo cũ, F1 → Developer: Reload Window |
-| `Wokwi`, `MQTT`, `HiveMQ`: Unknown word | Cảnh báo chính tả; từ kỹ thuật của project được khai báo trong `.vscode/settings.json` |
+| `Wokwi`, `MQTT`, `Aedes`: Unknown word | Cảnh báo chính tả; từ kỹ thuật của project được khai báo trong `.vscode/settings.json` |
 
 Tài liệu chính thức: [Bắt đầu với VS Code](https://docs.wokwi.com/vscode/getting-started),
 [cấu hình dự án](https://docs.wokwi.com/vscode/project-config).

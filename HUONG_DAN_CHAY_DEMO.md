@@ -1,7 +1,7 @@
 # Hướng dẫn chạy demo — Nhà thông minh nhóm 26
 
 Luồng chính: **ESP32/Wokwi trong VS Code → MQTT → Node-RED → Dashboard**.
-Node-RED xử lý tự động, AUTO/MANUAL/SLEEP, lịch ban đêm và ghi log CSV.
+Node-RED xử lý tự động, AUTO/MANUAL/SLEEP, lịch ban đêm và lưu SQLite và xuất CSV.
 
 Hướng dẫn thao tác từng bước và kết quả cần thấy:
 [Test từ đầu đến cuối](HUONG_DAN_TEST_TU_DAU_DEN_CUOI.md).
@@ -11,6 +11,8 @@ Nhiệt độ bắt đầu 30°C, máy lạnh làm mát về quanh 25°C rồi g
 giữ nhiệt. Xem LCD/dashboard và dòng Mức làm lạnh mô phỏng. Có người → đèn bật,
 Vắng người → đèn tắt ngay khi ESP32 phản hồi; AC tắt sau 15 giây vắng trong demo.
 Bấm **Dừng trải nghiệm** trước khi làm kịch bản kéo cảm biến bên dưới.
+
+> Bản 23/10: đăng nhập bằng `node_red/data/TAI_KHOAN_DEMO.txt`; chạy Node-RED trước Wokwi. Mở phần số liệu để xem lịch sử SQLite. [Chi tiết](docs/XAC_THUC_VA_DATABASE.md).
 
 ## Mở hệ thống
 

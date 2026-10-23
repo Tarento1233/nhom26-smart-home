@@ -3,6 +3,8 @@
 Làm theo thứ tự. Dùng **Phòng tự động** trên dashboard, không cần kéo thanh DHT22
 hoặc kích PIR trong bài này. Nhiệt độ và người trong phòng là dữ liệu mô phỏng.
 
+> Bản 23/10: đăng nhập bằng `node_red/data/TAI_KHOAN_DEMO.txt`; chạy Node-RED trước Wokwi. Mở phần số liệu để xem lịch sử SQLite. [Chi tiết](docs/XAC_THUC_VA_DATABASE.md).
+
 ## 1. Mở và kết nối
 
 - Mở `D:\IOT\khoi_dong_demo.bat` nếu hệ thống chưa chạy.

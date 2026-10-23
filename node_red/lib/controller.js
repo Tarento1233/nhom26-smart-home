@@ -332,6 +332,7 @@ function step(s, msg, now = Date.now()) {
   }
   return {
     state: s, mqtt: commands, view: { payload: view }, error: inputError,
+    records: events.map(({event,detail})=>({timestamp:new Date(now).toISOString(),event,mode:s.mode,temp:s.temp,humidity:s.humidity,lux:s.lux,motion:s.motion,light:s.outputs.light,ac:s.outputs.ac,detail})),
     logs: events.map(({ event, detail }) => ({ payload: csvRow(s, now, event, detail) })),
     tempChart, luxChart
   };

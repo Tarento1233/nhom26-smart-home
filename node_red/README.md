@@ -1,8 +1,16 @@
 # Nhà thông minh nhóm 26 — Node-RED + Wokwi trong VS Code
 
-Luồng chính: **cảm biến → ESP32/Wokwi → MQTT HiveMQ → Node-RED → Dashboard**.
+Luồng chính: **cảm biến → ESP32/Wokwi → MQTT Aedes có xác thực → Node-RED → Dashboard**.
 Lệnh tay và rule được Node-RED xử lý rồi gửi về ESP32. Home Assistant/Matter
 và trang giọng nói dùng chung MQTT với luồng này.
+
+## Đăng nhập và lưu dữ liệu
+
+Chạy bằng `start.ps1` hoặc launcher `.bat` đi kèm để bật cả broker, database và lớp đăng nhập.
+Tài khoản web nằm trong `data/TAI_KHOAN_DEMO.txt`, tự sinh trên từng máy.
+SQLite ở `data/smart_home.sqlite` lưu telemetry, lệnh, chế độ và xác thực.
+Mở **Cài đặt thử nghiệm & số liệu → Lịch sử đã lưu** để truy vấn và tải CSV.
+Xem [Authentication và Database](../docs/XAC_THUC_VA_DATABASE.md).
 
 ## Dùng giao diện lần đầu
 
@@ -194,13 +202,13 @@ Tiền tố mặc định `nhom26/room1`:
 | `environment/state` | `{"protocol":1,"enabled":true,"seq":1}` | ESP32 xác nhận nguồn dữ liệu/khung mô hình |
 
 Nhận lại lệnh có `source: node-red` không chuyển MANUAL, tránh vòng lặp.
-Node-RED dùng MQTT qua **WSS 8884**; ESP32 dùng TCP 1883, cùng broker HiveMQ.
+Node-RED và ESP32 dùng broker riêng TCP 1883; voice dùng WebSocket 1884. Mọi kết nối MQTT cần tài khoản và được kiểm tra ACL theo vai trò.
 
 ## Cấu trúc và bàn giao
 
 | File | Vai trò |
 |---|---|
-| `flows.json` | Flow có thể import: 3 tab MQTT/rule, Dashboard, API/CSV |
+| `flows.json` | Flow có thể import: 3 tab MQTT/rule, Dashboard, API/SQLite |
 | `lib/controller.js` | Mã nguồn rule và state machine dùng cho tests |
 | `lib/environment.js` | Mô hình nhiệt/ẩm, đóng vòng bằng relay thực tế, gửi khung và chờ xác nhận |
 | `dashboard.vue` | Giao diện của node `ui-template` |
@@ -208,6 +216,8 @@ Node-RED dùng MQTT qua **WSS 8884**; ESP32 dùng TCP 1883, cùng broker HiveMQ.
 | `settings.js` | Địa chỉ server, route voice, log và mặc định MQTT |
 | `start.ps1`, `stop.ps1` | Chạy/tắt server nền có kiểm tra tiến trình |
 | `package.json`, `pnpm-lock.yaml` | Phiên bản dependency đã chốt |
+| `data/smart_home.sqlite` | Database chính: telemetry, auth, phiên và MQTT retained |
+| `data/security.json` | Tài khoản riêng trên máy, không commit |
 | `data/telemetry.csv` | Log vận hành, gồm nguồn mô hình/chỉnh tay trong chi tiết cảm biến, giữ qua các lần chạy |
 | `data/node-red.log`, `data/node-red-error.log` | Log vận hành |
 
@@ -215,17 +225,15 @@ Sửa rule/template ở file nguồn rồi chạy `node scripts/build-flows.cjs`
 Nếu sửa flow trực tiếp trong editor, bấm Deploy để lưu. Build-flows sẽ tạo lại flow từ
 nguồn nên cần export/giữ bản chỉnh bằng editor trước khi tạo lại.
 
-Trên máy khác: cài **Node.js ≥22**, chép toàn bộ thư mục đồ án, chạy
-`cai_dat_node_red.bat` một lần rồi `khoi_dong_demo.bat`.
-Hoặc import `flows.json` vào Node-RED có `@flowfuse/node-red-dashboard` và sử dụng
-`settings.js` đi kèm để khai báo các biến topic, MQTT, đường dẫn voice và file log.
-Nếu giữ settings của hệ thống khác, cần ghép phần khai báo `IOT_*` và route voice
-từ settings này trước khi deploy.
+Trên máy khác: cài **Node.js ≥22.13**, clone toàn bộ repo, chạy
+`cai_dat_node_red.bat` rồi `khoi_dong_demo.bat`. Không chỉ import riêng flows.json:
+flow cần các dịch vụ SQLite, tài khoản và broker do `node-red-service.cjs` khởi tạo.
+Nếu muốn ghép vào một hệ thống Node-RED khác, cần tích hợp các dịch vụ tương ứng.
 
 ## Kiểm thử
 
 ```powershell
-node --test D:\IOT\test\controller.test.cjs D:\IOT\test\environment.test.cjs D:\IOT\test\voice_recognition.test.cjs
+npm test # trong node_red
 python D:\IOT\test\test_node_red_e2e.py
 # Thêm kiểm tra nút bấm, bố cục desktop/mobile bằng Chrome:
 python D:\IOT\test\test_node_red_e2e.py --browser
@@ -233,14 +241,14 @@ python D:\IOT\test\test_node_red_e2e.py --browser
 
 Test đơn vị chạy rule thật và các sự kiện nhận dạng giọng nói giả lập.
 E2E chạy **Node-RED thật trên cổng 1881**, giả lập thiết bị MQTT dưới tiền tố
-ngẫu nhiên `nhom26/test-...`, kiểm tra lệnh/phản hồi/log/khởi động lại rồi dọn retained của riêng lần test.
-CSV kiểm thử nằm ở `data/test-e2e.csv`; dữ liệu giả không đi vào topic/log sản xuất.
+ngẫu nhiên `nhom26/test-...`, broker thử riêng cổng 1885/1886, tài khoản và database riêng.
+Dữ liệu giả không đi vào topic/log sản xuất.
 E2E cần thư viện Python `paho-mqtt`; tùy chọn `--browser` cần thêm `playwright`
 và Google Chrome. Kết quả đã chạy: [KET_QUA_KIEM_THU.md](../KET_QUA_KIEM_THU.md).
 
 Server mặc định chỉ mở trên **localhost**. Bản này chưa được publish ra Internet;
-mạng MQTT HiveMQ và nhận giọng nói vẫn cần Internet. Wokwi phải đang chạy và hiển thị.
-Broker công khai không xác thực, nên chỉ dùng cho đồ án mô phỏng.
+Wokwi và nhận giọng nói vẫn cần Internet. MQTT chạy cục bộ có xác thực và ACL.
+Wokwi phải đang chạy và hiển thị. Bản này chưa cấu hình TLS hoặc truy cập từ Internet.
 
 Nguồn: [Node-RED](https://nodered.org/docs/getting-started/local),
 [Dashboard 2.0](https://dashboard.flowfuse.com/getting-started.html),

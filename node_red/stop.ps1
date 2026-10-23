@@ -15,7 +15,9 @@ if (-not $processInfo.CommandLine.Contains($PSScriptRoot) -or -not $processInfo.
 }
 try {
     $stopUrl = 'http://127.0.0.1:' + $serviceInfo.port + '/flows/state'
-    Invoke-RestMethod -Uri $stopUrl -Method Post -ContentType 'application/json' -Body '{"state":"stop"}' -TimeoutSec 5 | Out-Null
+    $securityPath = if ($env:IOT_SECURITY_FILE) { $env:IOT_SECURITY_FILE } else { Join-Path $PSScriptRoot 'data\security.json' }
+    $security = Get-Content -LiteralPath $securityPath -Raw | ConvertFrom-Json
+    Invoke-RestMethod -Uri $stopUrl -Headers @{Authorization='Bearer '+$security.serviceToken} -Method Post -ContentType 'application/json' -Body '{"state":"stop"}' -TimeoutSec 5 | Out-Null
 } catch { Write-Host 'Runtime did not respond; stopping the managed process.' }
 Stop-Process -Id $serviceInfo.pid
 Write-Host 'Node-RED stopped. Logs and flows are preserved.'

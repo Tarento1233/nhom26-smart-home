@@ -6,11 +6,18 @@ import json
 import random
 import sys
 import time
+from pathlib import Path
+import os
 
 import paho.mqtt.client as mqtt
 
 sys.stdout.reconfigure(encoding="utf-8")
-BASE = "nhom26/room1"
+security=Path(os.environ.get('IOT_SECURITY_FILE',Path(__file__).resolve().parents[1]/'node_red/data/security.json'))
+if not security.exists():
+    raise SystemExit('Chạy khoi_dong_node_red.bat trước để tạo tài khoản MQTT.')
+config=json.loads(security.read_text(encoding='utf-8-sig'))
+account=next(a for a in config['accounts'] if a['role']=='device')
+BASE = config['baseTopic']
 state ={"light": "OFF", "ac": "OFF"}
 
 
@@ -38,10 +45,11 @@ def on_message(c, userdata, msg):
 
 
 c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+c.username_pw_set(account['username'],account['password'])
 c.will_set(f"{BASE}/status", "offline", retain=True)
 c.on_connect = on_connect
 c.on_message = on_message
-c.connect("broker.hivemq.com", 1883, 30)
+c.connect("127.0.0.1", config['mqtt']['port'], 30)
 c.loop_start()
 try:
     while True:

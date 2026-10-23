@@ -8,8 +8,10 @@
 #define BASE GROUP "/room1"
 
 const char *WIFI_SSID = "Wokwi-GUEST";
-const char *MQTT_HOST = "broker.hivemq.com";
-const uint16_t MQTT_PORT = 1883;
+const char *MQTT_HOST = "host.wokwi.internal";
+uint16_t mqttPort = 1883;
+String mqttUsername, mqttPassword, provisionNonce, serialLine;
+unsigned long lastProvisionRequestMs = 0;
 
 const int PIN_DHT = 4;
 const int PIN_LDR = 34;
@@ -177,7 +179,7 @@ void onMessage(char *topic, byte *payload, unsigned int len) {
 void connectMqtt() {
   Serial.printf("MQTT connecting as %s... ", clientId.c_str());
   // LWT: broker tự báo offline khi ESP32 mất kết nối
-  if (mqtt.connect(clientId.c_str(), T_STATUS, 1, true, "offline")) {
+  if (mqtt.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str(), T_STATUS, 1, true, "offline")) {
     Serial.println("OK");
     wasConnected = true;
     mqtt.publish(T_STATUS, "online", true);
@@ -246,7 +248,9 @@ void setup() {
   // nên trộn thêm thời gian kết nối Wi-Fi (khác nhau mỗi lần) để 2 mô phỏng không trùng client id
   clientId = String(GROUP "-esp32-") + String((esp_random() ^ micros()) & 0xFFFFFF, HEX);
 
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  provisionNonce = String(esp_random(), HEX);
+  while (provisionNonce.length() < 8) provisionNonce = "0" + provisionNonce;
+  mqtt.setServer(MQTT_HOST, mqttPort);
   mqtt.setKeepAlive(30);
   mqtt.setSocketTimeout(10);
   mqtt.setCallback(onMessage);
@@ -254,6 +258,30 @@ void setup() {
 }
 
 void loop() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n') {
+      char nonce[17], username[41], password[65], extra;
+      unsigned int port;
+      if (sscanf(serialLine.c_str(), "N26_AUTH %16s %u %40s %64s %c", nonce, &port, username, password, &extra) == 4 &&
+          provisionNonce == nonce && port > 0 && port <= 65535) {
+        mqttUsername = username; mqttPassword = password; mqttPort = port;
+        mqtt.setServer(MQTT_HOST, mqttPort);
+        Serial.println("Da nhan tai khoan MQTT qua serial cuc bo");
+      }
+      serialLine = "";
+    } else if (c != '\r') {
+      if (serialLine.length() < 190) serialLine += c;
+      else serialLine = "";
+    }
+  }
+  if (mqttUsername.length() == 0) {
+    if (millis() - lastProvisionRequestMs > 2000) {
+      lastProvisionRequestMs = millis();
+      Serial.printf("N26_PROVISION %s\n", provisionNonce.c_str());
+    }
+    return;
+  }
   if (!mqtt.connected()) {
     if (wasConnected) {
       wasConnected = false;

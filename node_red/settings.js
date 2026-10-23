@@ -1,9 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const services = require('./lib/services').getServices();
 
-process.env.IOT_MQTT_BASE ||= 'nhom26/room1';
-process.env.IOT_MQTT_HOST ||= 'wss://broker.hivemq.com:8884/mqtt';
-process.env.IOT_MQTT_PORT ||= '8884';
+process.env.IOT_MQTT_BASE = services.config.baseTopic;
+process.env.IOT_MQTT_HOST = '127.0.0.1';
+process.env.IOT_MQTT_PORT = String(services.config.mqtt.port);
+const controllerAccount=services.config.accounts.find(a=>a.role==='controller');
+process.env.IOT_MQTT_USERNAME=controllerAccount.username;
+process.env.IOT_MQTT_PASSWORD=controllerAccount.password;
 // MQTT node fields only substitute a variable when it occupies the whole field.
 // Resolve complete topic strings here, including the LWT topic.
 for (const [key, suffix] of Object.entries({
@@ -17,6 +21,7 @@ fs.mkdirSync(path.dirname(logFile), { recursive: true });
 if (!fs.existsSync(logFile) || fs.statSync(logFile).size === 0) {
   fs.writeFileSync(logFile, '\uFEFFtimestamp,event,mode,temp,humidity,lux,motion,light,ac,detail\n');
 }
+services.database.migrateCsv(logFile);
 
 module.exports = {
   uiHost: '127.0.0.1',
@@ -27,6 +32,8 @@ module.exports = {
   httpStatic: [{ path: path.join(__dirname, '..', 'voice'), root: '/voice/' }],
   functionTimeout: 5,
   functionExternalModules: false,
+  functionGlobalContext: { iotDatabase:services.database },
+  dashboard: { middleware:(req,res,next)=>services.auth.middleware(req,res,next), ioMiddleware:(socket,next)=>services.auth.ioMiddleware(socket,next) },
   runtimeState: { enabled: true, ui: true },
   contextStorage: {
     default: { module: 'memory' },
