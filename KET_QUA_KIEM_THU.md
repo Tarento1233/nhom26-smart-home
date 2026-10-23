@@ -7,7 +7,7 @@ Bản hiện tại: Node-RED 5.0.8, Dashboard 2.0 1.33.0, Aedes 1.2.0 và SQLite
 | Controller, mô hình nhiệt và nhận dạng câu lệnh | 59 kiểm thử đạt |
 | SQLite, ACL, serial và biểu đồ | 9 kiểm thử đạt |
 | Tổng kiểm thử tự động bằng Node | **68/68 đạt** |
-| Tích hợp HTTP/MQTT/SQLite và Chrome | **60/61 bước đạt** |
+| Tích hợp HTTP/MQTT/SQLite và Chrome | **61/61 bước đạt** |
 | Firmware ESP32 | Build thành công: 958892 byte chương trình (73%), RAM 48472 byte (14%) |
 | Launcher và cài đặt | Lockfile cài được; dịch vụ mới đã khởi động trên cổng 1880 |
 | Chuyển lịch sử cũ | 6350 bản ghi CSV được nhập vào SQLite một lần, không xóa CSV |
