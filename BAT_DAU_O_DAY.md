@@ -45,7 +45,7 @@ cần Internet; MQTT chạy trên máy với xác thực. Truy cập từ ngoài
   Đường dẫn bộ Arduino trong script là mặc định của máy gốc; truyền
   `-ArduinoCli` và `-ArduinoConfig` theo máy mới nếu cần.
 - Hướng dẫn demo: `TEST_NHANH_5_PHUT.md`, `HUONG_DAN_CHAY_DEMO.md`.
-- Kết quả kiểm thử mới nhất: **64 kiểm tra logic + 60 bước tích hợp đạt**. Xem `KET_QUA_KIEM_THU.md` và `node_red/data/test-e2e-result.json`.
+- Kết quả kiểm thử mới nhất: **68 kiểm tra logic + 61 bước tích hợp đạt**. Xem `KET_QUA_KIEM_THU.md` và `node_red/data/test-e2e-result.json`.
 
 Các đường dẫn `D:\IOT` trong tài liệu chi tiết là ví dụ của máy gốc;
 thay bằng thư mục đã giải nén trên máy của bạn.

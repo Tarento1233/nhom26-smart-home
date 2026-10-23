@@ -4,6 +4,7 @@ const root = path.join(__dirname, '..');
 const controller = fs.readFileSync(path.join(root, 'lib/controller.js'), 'utf8');
 const environment = fs.readFileSync(path.join(root, 'lib/environment.js'), 'utf8');
 const template = fs.readFileSync(path.join(root, 'dashboard.vue'), 'utf8');
+const charts = fs.readFileSync(path.join(root, 'lib/charts.js'), 'utf8');
 const nodes = [];
 const MAIN = 'n26-main', UI = 'n26-ui', API = 'n26-api', BROKER = 'n26-broker';
 const add = node => { nodes.push(node); return node.id; };
@@ -80,14 +81,19 @@ add({id:'n26-dashboard',type:'ui-template',z:UI,group:'n26-room-group',page:'',u
   head:'',format:template,storeOutMessages:false,passthru:false,resendOnRefresh:false,templateScope:'local',className:'',
   x:400,y:150,wires:[['n26-controls-out']]});
 linkOut('n26-controls-out',UI,'Lệnh người dùng → rule',690,150,['n26-controls-in']);
-linkIn('n26-temp-in',UI,'Dữ liệu nhiệt độ',135,270,['n26-temp-out','n26-history-temp'],'n26-temp-chart');
-linkIn('n26-lux-in',UI,'Dữ liệu ánh sáng',135,350,['n26-lux-out','n26-history-lux'],'n26-lux-chart');
+linkIn('n26-temp-in',UI,'Dữ liệu nhiệt độ',135,270,['n26-temp-out','n26-history-temp'],'n26-temp-chart-data');
+linkIn('n26-lux-in',UI,'Dữ liệu ánh sáng',135,350,['n26-lux-out','n26-history-lux'],'n26-lux-chart-data');
+add({id:'n26-chart-tick',type:'inject',z:UI,name:'Cập nhật cửa sổ 15 phút',props:[{p:'topic',vt:'str'}],topic:'_chart_tick',repeat:'10',once:false,onceDelay:1,x:180,y:430,wires:[['n26-temp-chart-data','n26-lux-chart-data']]});
 for (const [id,group,label,y,color] of [['n26-temp-chart','n26-temp-group','Nhiệt độ',270,'#b68b3c'],['n26-lux-chart','n26-lux-group','Ánh sáng',350,'#2e7663']]) {
+  const metric=label==='Nhiệt độ'?'temp':'lux';
+  fn(id+'-data',UI,'15 phút · '+label,`const chart=(()=>{const module={exports:{}};\n${charts}\nreturn module.exports;})();
+const result=chart.update(context.get('chart')||{},msg,'${metric}',Date.now());
+context.set('chart',result.state);return result.msg;`,390,y,[[id]]);
   add({id,type:'ui-chart',z:UI,group,name:label,label,order:1,chartType:'line',category:'topic',categoryType:'msg',
-    xAxisLabel:'',xAxisProperty:'timestamp',xAxisPropertyType:'msg',xAxisType:'time',xAxisFormat:'HH:mm',xAxisFormatType:'custom',
-    yAxisLabel:label==='Nhiệt độ'?'°C':'lux',yAxisProperty:'payload',yAxisPropertyType:'msg',ymin:'',ymax:'',
-    action:'append',stackSeries:false,pointShape:'circle',pointRadius:1,showLegend:false,removeOlder:24,removeOlderUnit:'3600',removeOlderPoints:'600',
-    colors:[color],textColorDefault:true,gridColorDefault:true,width:6,height:5,className:'',interpolation:'linear',x:410,y,wires:[[]]});
+    xAxisLabel:'',xAxisProperty:'x',xAxisPropertyType:'property',xAxisType:'time',xAxisFormat:'{HH}:{mm}',xAxisFormatType:'custom',
+    yAxisLabel:label==='Nhiệt độ'?'°C':'lux',yAxisProperty:'y',yAxisPropertyType:'property',ymin:metric==='lux'?'0':'16',ymax:metric==='lux'?'1000':'32',
+    action:'append',stackSeries:false,pointShape:'circle',pointRadius:4,showLegend:false,removeOlder:15,removeOlderUnit:'60',removeOlderPoints:'1200',
+    colors:[color],textColorDefault:true,gridColorDefault:true,width:6,height:5,className:'',interpolation:'linear',x:675,y,wires:[[]]});
 }
 
 comment('n26-api-note',API,'API đăng nhập · truy vấn SQLite · xuất CSV','GET /api/status; POST /api/control; GET /api/log.csv; GET /api/history. SQLite lưu cảm biến, lệnh, xác thực và phiên đăng nhập. CSV cũ được nhập một lần; xuất CSV đọc từ database. Node-RED chỉ lắng nghe 127.0.0.1.',530,40);
@@ -119,7 +125,7 @@ if(msg.req){
  catch(error){msg.payload={error:error.message};msg.statusCode=400;}
  msg.headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};return [null,null,msg];
 }
-const points=(event,key,name)=>database.chart(event,key).map(r=>({topic:name,payload:r.value,timestamp:Date.parse(r.timestamp)}));
+const points=(event,key,name)=>({topic:name,action:'replace',payload:database.chart(event,key).map(r=>({x:Date.parse(r.timestamp),y:r.value}))});
 return [points('sensor:temp_humid','temp','Nhiệt độ'),points('sensor:light','lux','Ánh sáng'),null];`,610,510,[['n26-history-temp'],['n26-history-lux'],['n26-http-response']]);
 linkOut('n26-history-temp',API,'Lịch sử nhiệt độ',1065,590,['n26-temp-in']);
 linkOut('n26-history-lux',API,'Lịch sử ánh sáng',1065,645,['n26-lux-in']);

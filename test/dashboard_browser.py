@@ -8,6 +8,8 @@ def verify_dashboard(url, state, wait_for, control, data_dir, check, device_conn
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel='chrome', headless=True)
         page = browser.new_page(viewport={'width': 1280, 'height': 1100}, locale='vi-VN')
+        # Enable Dashboard's ECharts test hook for inspecting axes.
+        page.add_init_script('window.Cypress = {};')
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(url + '/dashboard/room', wait_until='networkidle')
@@ -23,6 +25,25 @@ def verify_dashboard(url, state, wait_for, control, data_dir, check, device_conn
         assert page.locator('.iot-history-group').first.is_hidden()
         check('First view explains the purpose and keeps technical settings collapsed')
         page.locator('.iot-demo summary').click()
+        page.wait_for_function("""() => ['n26-temp-chart','n26-lux-chart'].every(id => {
+          const option=window.uiCharts?.[id]?.chart?.getOption();
+          return option?.series?.[0]?.data?.length && Number.isFinite(option.xAxis?.[0]?.max);
+        })""")
+        chart_state=page.evaluate("""() => Object.fromEntries(['n26-temp-chart','n26-lux-chart'].map(id=>{
+          const o=window.uiCharts[id].chart.getOption();
+          const data=o.series[0].data.filter(p=>p[1]!==null);
+          return [id,{min:o.xAxis[0].min,max:o.xAxis[0].max,ymin:o.yAxis[0].min,ymax:o.yAxis[0].max,
+            latest:data.at(-1),title:o.title[0].text,subtitle:o.title[0].subtext,connected:o.series[0].connectNulls}];
+        }))""")
+        for chart in chart_state.values():
+            assert chart['max']-chart['min']==15*60*1000, chart
+            assert chart['latest'][0]>=chart['min'],chart
+            assert chart['ymin']<chart['latest'][1]<chart['ymax'],chart
+            assert chart['connected'] is False,chart
+            assert 'Cập nhật' in chart['subtitle'],chart
+        page.locator('.iot-history-group').first.screenshot(path=str(data_dir/'temperature-chart-test.png'))
+        page.locator('.iot-history-group').last.screenshot(path=str(data_dir/'light-chart-test.png'))
+        check('Charts show the recent 15 minutes, actual update time and visible padded sensor lines')
         page.get_by_role('button',name='Xem lịch sử',exact=True).click()
         expect(page.locator('.iot-history-table tbody tr').first).to_be_visible()
         page.get_by_label('Loại hoạt động',exact=True).select_option('sensor:temp_humid')

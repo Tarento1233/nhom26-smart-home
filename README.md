@@ -85,7 +85,7 @@ cd node_red
 npm test
 ```
 
-Đã đạt **64 kiểm thử logic và 60 bước tích hợp**, gồm đăng nhập HTTP/MQTT, ACL, SQLite và trình duyệt.
+Đã đạt **68 kiểm thử logic và 61 bước tích hợp**, gồm đăng nhập HTTP/MQTT, ACL, SQLite và trình duyệt.
 Xem [báo cáo](KET_QUA_KIEM_THU.md); các log/ảnh lịch sử trong `node_red/data/` là
 dữ liệu chạy trên máy gốc và không được lưu trong Git.
 

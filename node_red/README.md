@@ -22,6 +22,12 @@ và **Tôi ra khỏi phòng**. Mỗi thiết bị có nút bật/tắt ghi rõ t
 chứa đồng hồ demo, thời gian chờ, cảm biến, tải lịch sử và mở các biểu đồ bên dưới.
 Trang giọng nói mở từ **Thích nói hơn bấm?**, có liên kết quay về căn phòng.
 
+Biểu đồ nhiệt độ/ánh sáng hiển thị **15 phút gần nhất**, theo giờ thực. Mỗi biểu đồ
+hiện số đo và giờ cập nhật; giờ thử 14:00/23:00 không đổi mốc thời gian đo.
+Thang dọc chừa khoảng quanh số liệu để thấy cả đường lux không đổi. Khoảng mất
+tín hiệu quá 25 giây được ngắt đường; không nội suy qua nhiều giờ ngừng chạy.
+Lịch sử lâu hơn vẫn xem/lọc ở bảng SQLite hoặc tải CSV.
+
 **Bật đèn trước khi về:** bấm hoặc nói bật đèn khi phòng vắng vẫn được chấp nhận.
 Lệnh tay chuyển sang MANUAL, giữ đến khi bạn tắt hoặc đổi chế độ; Demo nhanh không
 tự trả về AUTO. Chọn **Tự động** để áp dụng lại cảm biến và lịch.

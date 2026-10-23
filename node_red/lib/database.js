@@ -4,6 +4,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {DatabaseSync}=require('node:sqlite');
 const {csvCell}=require('./controller');
+const {WINDOW_MS}=require('./charts');
 const FIELDS=['timestamp','event','mode','temp','humidity','lux','motion','light','ac','detail'];
 const digest=value=>crypto.createHash('sha256').update(value).digest('hex');
 const passwordHash=(password,salt)=>crypto.scryptSync(password,salt,32).toString('hex');
@@ -93,7 +94,7 @@ function openDatabase(filename) {
     if(query.beforeId!==undefined){const id=Number(query.beforeId);if(!Number.isInteger(id)||id<1)throw new Error('beforeId không hợp lệ');where.push('id<?');params.push(id);}
     return db.prepare('SELECT * FROM telemetry'+(where.length?' WHERE '+where.join(' AND '):'')+' ORDER BY id DESC LIMIT ?').all(...params,n).reverse();
   }
-  function chart(event,key) {return db.prepare(`SELECT timestamp,${key} AS value FROM telemetry WHERE event=? AND timestamp>=? AND ${key} IS NOT NULL ORDER BY id DESC LIMIT 500`).all(event,new Date(Date.now()-86400000).toISOString()).reverse();}
+  function chart(event,key) {return db.prepare(`SELECT timestamp,${key} AS value FROM telemetry WHERE event=? AND timestamp>=? AND ${key} IS NOT NULL ORDER BY timestamp DESC,id DESC LIMIT 1200`).all(event,new Date(Date.now()-WINDOW_MS).toISOString()).reverse();}
   function exportCsv() {const rows=['\uFEFFtimestamp,event,mode,temp,humidity,lux,motion,light,ac,detail\n'];for(const r of db.prepare('SELECT * FROM telemetry ORDER BY id').iterate())rows.push(FIELDS.map(k=>csvCell(r[k])).join(',')+'\n');return rows.join('');}
   function summary() {
     const counts=db.prepare('SELECT count(*) AS records,min(timestamp) AS firstSaved,max(timestamp) AS lastSaved FROM telemetry').get();

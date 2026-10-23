@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node node-red-service.cjs",
     "build:flows": "node scripts/build-flows.cjs",
-    "test": "node --test ../test/controller.test.cjs ../test/environment.test.cjs ../test/voice_recognition.test.cjs ../test/auth_database.test.cjs"
+    "test": "node --test ../test/controller.test.cjs ../test/environment.test.cjs ../test/voice_recognition.test.cjs ../test/auth_database.test.cjs ../test/charts.test.cjs"
   },
   "dependencies": {
     "@flowfuse/node-red-dashboard": "1.33.0",
